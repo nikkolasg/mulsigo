@@ -1,0 +1,27 @@
+The concept is to enable multiple participants to sign a message in way that
+results in only one signature that is verifiable by only one public key.
+A big requirement is that signatures can be validated using standard gpg tools
+so there's no modifications on the client side.
+There are at least two ways this is possible:
+1) using t-n threshold signatures; see 
+    "Provably Secure Distributed Schnorr Signatures
+    and a (t, n) Threshold Scheme for Implicit
+    Certificates" by Stinson & Strobl
+2) using collective signature CoSi; see <CoSi paper>
+
+For the moment, solution (1) is the preferred approach since in my opinion
+offers a more pro-active approach,i.e. any signature issued *must* have passed
+by at least t members of the set. So one "malicious" developer can't alone
+sign a new release. 
+
+Requirements:
+ + Each participants must have a private / public key pair
+ + Each participants know the public key of each other participants
+ + The client knows the "aggregate" public key of all participants,i.e. the 
+   set of participants is a closed set.
+ 
+The design follows the protocol indicated in the paper (1).
+
+TODO:
+ + Verification given in the paper
+ + optimizations can reduce the size of the coefficients as 32 bytes
