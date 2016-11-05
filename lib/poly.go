@@ -8,6 +8,8 @@ import (
 )
 
 type Poly struct {
+	// public key
+	public Point
 	// coeffs of the polynomial which are scalar on 32 bytes
 	coeffs []Scalar
 	// degree of the polynomial
@@ -15,8 +17,10 @@ type Poly struct {
 }
 
 type Share struct {
-	// the index from where this share have been generated
-	Index uint32
+	// the committed secret of the polynomial, i.e. the public part.
+	Public Point
+	// the polynomial is evaluated at f(Xcoord)
+	Xcoord uint32
 	// the scalar representing the share
 	Sc Scalar
 }
@@ -25,7 +29,7 @@ type Share struct {
 // - secret as the first coefficient
 // - degree k
 // - reader to pick random coef. If nil, pick crypto.Rand
-func NewPoly(reader io.Reader, secret *Private, k uint32) (*Poly, error) {
+func NewPoly(reader io.Reader, secret *PrivateKey, public *PublicKey, k uint32) (*Poly, error) {
 	var coeffs = make([]Scalar, k)
 	coeffs[0] = secret.Scalar()
 	for i := 1; i < int(k); i++ {
@@ -41,6 +45,7 @@ func NewPoly(reader io.Reader, secret *Private, k uint32) (*Poly, error) {
 		coeffs[i] = sc
 	}
 	return &Poly{
+		public: public.Point(),
 		coeffs: coeffs,
 		k:      k,
 	}, nil
@@ -60,8 +65,9 @@ func (p *Poly) Share(i uint32) Share {
 		acc.Add(acc.Int, p.coeffs[j].Int)
 	}
 	return Share{
-		Index: i + 1,
-		Sc:    acc,
+		Public: p.public,
+		Xcoord: i + 1,
+		Sc:     acc,
 	}
 }
 
@@ -76,7 +82,7 @@ func Reconstruct(shares []Share, t, n uint32) (Scalar, error) {
 	xCoords := make([]Scalar, len(sharesTaken))
 	for i, sh := range sharesTaken {
 		x := NewScalar()
-		x.SetInt64(int64(sh.Index))
+		x.SetInt64(int64(sh.Xcoord))
 		xCoords[i] = x
 	}
 	acc := NewScalar()
@@ -100,4 +106,21 @@ func Reconstruct(shares []Share, t, n uint32) (Scalar, error) {
 		acc.Add(acc.Int, num.Div(num.Int, den.Int))
 	}
 	return acc, nil
+}
+
+// DistPoly stands for Distributed Polynomial, just because I can't find a good
+// struct name for what it does:
+// - Create / Maintains a matrix of Poly
+// - Generate a share of the distributed secret
+//      N1    N2    N3    N4 ... Nn
+// N1   s11   s12   s13   s14 .. s1n = poly1
+// N2   s21   s22   s23   s24 .. s2n = poly2
+// ...
+// NN   sn1   sn2   sn3   sn4 .. snn = polyn
+// N1 = S1    S2    S3    S4     SN
+// where S(n) is the share of the distributed secret.
+type DistPoly struct {
+}
+
+type DistShare struct {
 }

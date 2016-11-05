@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/alecthomas/assert"
@@ -10,11 +11,11 @@ import (
 func TestPolyShare(t *testing.T) {
 	var k uint32 = 5
 	var n uint32 = 10
-	_, priv, err := NewKeyPair(nil)
+	pub, priv, err := NewKeyPair(nil)
 	require.Nil(t, err)
 
 	secret := priv.Scalar()
-	poly, err := NewPoly(nil, priv, k)
+	poly, err := NewPoly(nil, priv, pub, k)
 	require.Nil(t, err)
 
 	shares := make([]Share, k)
@@ -25,4 +26,12 @@ func TestPolyShare(t *testing.T) {
 	recons, err := Reconstruct(shares, k, n)
 	assert.Nil(t, err)
 	assert.True(t, secret.Equal(recons.Int))
+
+	recPub, err := recons.Commit()
+	require.Nil(t, err)
+	fmt.Println(recPub)
+	fmt.Println(pub)
+	assert.True(t, recPub.Equal(pub))
+	// Not true because recPriv is already reduced
+	//assert.True(t, recPriv.Equal(priv))
 }
