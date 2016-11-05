@@ -29,7 +29,7 @@ func NewPoly(reader io.Reader, secret *Private, k uint32) (*Poly, error) {
 	var coeffs = make([]Scalar, k)
 	coeffs[0] = secret.Scalar()
 	for i := 1; i < int(k); i++ {
-		var c [32]byte
+		var c [ScalarSize]byte
 		err := RandomBytes(reader, c[:])
 		if err != nil {
 			return nil, err

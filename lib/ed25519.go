@@ -14,6 +14,7 @@ import (
 const (
 	PublicSize  = 32
 	PrivateSize = 64
+	ScalarSize  = 32
 )
 
 type Public [PublicSize]byte
