@@ -64,6 +64,10 @@ func TestEd25519ScalarMarshalling(t *testing.T) {
 	sc1.SetBytes(rev)
 
 	buff, _ := sc1.MarshalBinary()
+	buff2 := sc1.Bytes()
+
+	sc2p := NewScalar()
+	sc2p.SetBytes(buff2)
 	sc2 := NewScalar()
 	sc2.SetBytes(buff)
 
@@ -73,6 +77,7 @@ func TestEd25519ScalarMarshalling(t *testing.T) {
 	sc4 := NewScalar()
 	sc4.SetBytes(buff)
 
+	assert.True(t, sc1.Equal(sc2.Int))
 	assert.True(t, sc1.Equal(sc2.Int))
 	assert.True(t, sc1.Equal(sc3.Int))
 	assert.True(t, sc1.Equal(sc4.Int))
