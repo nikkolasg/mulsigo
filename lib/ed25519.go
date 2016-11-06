@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	PublicSize  = 32
-	PrivateSize = 64
-	ScalarSize  = 32
+	PublicSize    = 32
+	PrivateSize   = 64
+	ScalarSize    = 32
+	SignatureSize = 64
 )
 
 type PublicKey [PublicSize]byte
@@ -132,11 +133,21 @@ type Point struct {
 	*edwards25519.ExtendedGroupElement
 }
 
+func NewPoint() Point {
+	ege := new(edwards25519.ExtendedGroupElement)
+	return Point{ege}
+}
+
 func (p *Point) Public() *PublicKey {
 	var pub [PublicSize]byte
 	p.ToBytes(&pub)
 	pk := PublicKey(pub)
 	return &pk
+}
+
+func (p *Point) Bytes() []byte {
+	var pub = p.Public()
+	return pub[:]
 }
 
 // Scalar is a scalar represented on 32 bytes and is always reduced modulo
@@ -180,4 +191,84 @@ func (s *Scalar) CommitPublic() *PublicKey {
 
 	pk := PublicKey(pub32)
 	return &pk
+}
+
+// SchnorrSign signs the message using the given secret scalar.
+// The signature algorithm follows the ideas from
+// + Eddsa https://tools.ietf.org/html/draft-irtf-cfrg-eddsa-05#page-12
+// + Xeddsa https://whispersystems.org/docs/specifications/xeddsa/
+// + CoSi https://arxiv.org/pdf/1503.08768v4.pdf
+// It's a non-deterministic signature scheme.
+// random must be able to generate 64 bytes of random bytes. If it's nil,
+// crypto.Rand is used instead.
+func SchnorrSign(secret Scalar, msg []byte, random io.Reader) [SignatureSize]byte {
+	var Z [64]byte
+	var sig [64]byte
+	var public = secret.CommitPublic()
+	RandomBytes(random, Z[:])
+	// r = H( secret || A  || Z )
+	h1 := sha512.New()
+	h1.Write(secret.Bytes())
+	h1.Write(public[:])
+	h1.Write(Z[:])
+	r := NewScalar()
+	r.SetBytes(h1.Sum(nil))
+	R := r.Commit()
+
+	// k = H( R || A || M)
+	h2 := sha512.New()
+	h2.Write(R.Bytes())
+	h2.Write(public[:])
+	h2.Write(msg)
+	k := NewScalar()
+	k.SetBytes(h2.Sum(nil))
+
+	// s = r + k * secret
+	s := k.Mul(k.Int, secret.Int).Add(k.Int, r.Int)
+
+	// sig = R || s
+	copy(sig[:32], R.Bytes())
+	copy(sig[32:], s.Bytes())
+	return sig
+}
+
+func SchnorrVerify(public *PublicKey, msg []byte, sig [SignatureSize]byte) bool {
+
+	if sig[63]&224 != 0 {
+		fmt.Println("Something's wrong or not")
+		return false
+	}
+	// Reconstruct R & s
+	var R [32]byte
+	var s [32]byte
+	var A = NewPoint()
+
+	copy(R[:], sig[:32])
+	copy(s[:], sig[32:])
+
+	// Set A to its negative
+	ab := [32]byte(*public)
+	if !A.FromBytes(&ab) {
+		return false
+	}
+	edwards25519.FeNeg(&A.X, &A.X)
+	edwards25519.FeNeg(&A.T, &A.T)
+
+	// reconstruct k = H( R || A || Msg)
+	h := sha512.New()
+	h.Write(R[:])
+	h.Write(public[:])
+	h.Write(msg)
+	var digest [64]byte
+	copy(digest[:], h.Sum(nil))
+	var kReduced [32]byte
+	edwards25519.ScReduce(&kReduced, &digest)
+
+	// checks s*B + k*(-A) = Rcheck =?= R
+	var RCheck = new(edwards25519.ProjectiveGroupElement)
+	edwards25519.GeDoubleScalarMultVartime(RCheck, &kReduced, A.ExtendedGroupElement, &s)
+	var RCheckBuff [32]byte
+	RCheck.ToBytes(&RCheckBuff)
+
+	return subtle.ConstantTimeCompare(RCheckBuff[:], R[:]) == 1
 }

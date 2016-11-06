@@ -82,3 +82,15 @@ func TestEd25519ScalarMarshalling(t *testing.T) {
 	assert.True(t, sc1.Equal(sc3.Int))
 	assert.True(t, sc1.Equal(sc4.Int))
 }
+
+func TestEd25519SignVerify(t *testing.T) {
+	pub, priv, err := NewKeyPair(nil)
+	require.Nil(t, err)
+
+	var msg = []byte("Hello World!\n")
+
+	sig := SchnorrSign(priv.Scalar(), msg, nil)
+
+	assert.True(t, SchnorrVerify(pub, msg, sig))
+
+}

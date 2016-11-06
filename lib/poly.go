@@ -5,6 +5,7 @@ package lib
 import (
 	"errors"
 	"io"
+	"sync"
 )
 
 type Poly struct {
@@ -109,18 +110,31 @@ func Reconstruct(shares []Share, t, n uint32) (Scalar, error) {
 	return acc, nil
 }
 
+// XXX on HOLD
 // DistPoly stands for Distributed Polynomial, just because I can't find a good
 // struct name for what it does:
 // - Create / Maintains a matrix of Poly
 // - Generate all shares for this node to help construct the distributed secret
 //      N1    N2    N3    N4 ... Nn
-// N1   s11   s12   s13   s14 .. s1n = poly1
-// N2   s21   s22   s23   s24 .. s2n = poly2
+// N1 + s11   s12   s13   s14 .. s1n   Pub1
+// N2 + s21   s22   s23   s24 .. s2n   Pub2
 // ...
-// NN   sn1   sn2   sn3   sn4 .. snn = polyn
-// N1 = S1    S2    S3    S4     SN
+// NN + sn1   sn2   sn3   sn4 .. snn   PubN
+// N1 = S1    S2    S3    S4     SN    Dist. Pub
 // where S(n) is the share of the distributed secret.
 type DistPoly struct {
+	// Threshold to recover the distributed secret
+	t uint32
+	// number of participants
+	n uint32
+	// accumulator of share received needed to construct one distributed share
+	shares []Share
+	// the distributed share of this node
+	disShare Share
+	// the distributed public key
+	disPublic Point
+	// to make things thread safe
+	disMut sync.Mutex
 }
 
 type DistShare struct {
