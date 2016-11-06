@@ -29,23 +29,24 @@ type Share struct {
 // - secret as the first coefficient
 // - degree k
 // - reader to pick random coef. If nil, pick crypto.Rand
-func NewPoly(reader io.Reader, secret *PrivateKey, public *PublicKey, k uint32) (*Poly, error) {
+func NewPoly(reader io.Reader, secret Scalar, public Point, k uint32) (*Poly, error) {
 	var coeffs = make([]Scalar, k)
-	coeffs[0] = secret.Scalar()
+	coeffs[0] = secret
 	for i := 1; i < int(k); i++ {
 		var c [ScalarSize]byte
 		err := RandomBytes(reader, c[:])
 		if err != nil {
 			return nil, err
 		}
-		sc, err := NewScalarFromBytes(c[:])
+		sc := NewScalar()
+		sc.SetBytes(c[:])
 		if err != nil {
 			return nil, err
 		}
 		coeffs[i] = sc
 	}
 	return &Poly{
-		public: public.Point(),
+		public: public,
 		coeffs: coeffs,
 		k:      k,
 	}, nil

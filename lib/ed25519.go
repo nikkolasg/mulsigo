@@ -6,6 +6,8 @@ package lib
 import (
 	"crypto/sha512"
 	"crypto/subtle"
+	"encoding/hex"
+	"fmt"
 	"io"
 
 	"github.com/agl/ed25519/edwards25519"
@@ -77,13 +79,16 @@ func NewKeyPairReduced(reader io.Reader) (*PublicKey, *PrivateKey, error) {
 	var privateReduced [32]byte
 
 	copy(privateReduced[:], digest[:32])
-	privateInt := nist.NewIntBytes(privateReduced[:], &primeOrder.V)
-	privateInt.BO = nist.LittleEndian
 
-	privateIntBuff := privateInt.LittleEndian(32, 32)
+	privateInt := NewScalar()
+	privateInt.SetBytes(privateReduced[:])
+	privateIntBuff, _ := privateInt.MarshalBinary()
 	if len(privateIntBuff) != 32 {
 		panic("Aie")
 	}
+	copy(privateKey[:], privateIntBuff[:32])
+	copy(privateKey[32:], digest[32:])
+	fmt.Println("NewKeyPairReduced() ", hex.EncodeToString(privateKey[:]))
 
 	var A edwards25519.ExtendedGroupElement
 	var hBytes [32]byte
@@ -98,10 +103,8 @@ func NewKeyPairReduced(reader io.Reader) (*PublicKey, *PrivateKey, error) {
 
 // Scalar returns the scalar part of the private key
 func (p *PrivateKey) Scalar() Scalar {
-	sc, err := NewScalarFromBytes(p[:32])
-	if err != nil {
-		panic("Wrong private key")
-	}
+	sc := NewScalar()
+	sc.SetBytes(p[:32])
 	return sc
 }
 
@@ -129,10 +132,11 @@ type Point struct {
 	*edwards25519.ExtendedGroupElement
 }
 
-func (p *Point) Public() PublicKey {
+func (p *Point) Public() *PublicKey {
 	var pub [PublicSize]byte
 	p.ToBytes(&pub)
-	return PublicKey(pub)
+	pk := PublicKey(pub)
+	return &pk
 }
 
 // Scalar is a scalar represented on 32 bytes and is always reduced modulo
@@ -152,34 +156,28 @@ func (s *Scalar) Bytes() []byte {
 	return s.LittleEndian(32, 32)
 }
 
-func NewScalarFromBytes(buff []byte) (Scalar, error) {
-	// put the buff in big endian as the default in nist.Int
-	var cop = make([]byte, len(buff))
-	copy(cop, buff)
-	err := Reverse(cop, cop)
-	if err != nil {
-		return Scalar{}, err
-	}
-	i := nist.NewIntBytes(cop, &primeOrder.V)
-	i.BO = nist.LittleEndian
-	return Scalar{i}, nil
-}
-
-// KeyPair returns a ed25519/eddsa public / private key pair from the scalar.
-// Namely, it treats the scalar as the output of the prng.
-// XXX HUGE: PrivateKey IS NOT USABLE TO SIGN
-func (s *Scalar) Commit() (*PublicKey, error) {
+// Commit returns s * G with G being the base point of the curve.
+func (s *Scalar) Commit() Point {
 	var A edwards25519.ExtendedGroupElement
 	var hBytes [32]byte
-	var publicKey PublicKey
-	var pub32 [32]byte
 	var buff = s.Bytes()
 
 	copy(hBytes[:], buff[:])
-	//fmt.Println("Commit() private:", hBytes)
+	edwards25519.GeScalarMultBase(&A, &hBytes)
+
+	return Point{&A}
+}
+
+func (s *Scalar) CommitPublic() *PublicKey {
+	var A edwards25519.ExtendedGroupElement
+	var hBytes [32]byte
+	var buff = s.Bytes()
+	var pub32 [32]byte
+
+	copy(hBytes[:], buff[:])
 	edwards25519.GeScalarMultBase(&A, &hBytes)
 	A.ToBytes(&pub32)
 
-	copy(publicKey[:], pub32[:])
-	return &publicKey, nil
+	pk := PublicKey(pub32)
+	return &pk
 }

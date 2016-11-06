@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"testing"
 
@@ -43,20 +42,38 @@ func TestEd25519PublicPoint(t *testing.T) {
 
 	point := pub.Point()
 	pubRec := point.Public()
-	assert.Equal(t, pub, &pubRec)
+	assert.Equal(t, pub, pubRec)
 }
 
-func TestEd25519PrivateScalar(t *testing.T) {
+func TestEd25519ScalarCommit(t *testing.T) {
 	pub, priv, err := NewKeyPair(seed())
 	require.Nil(t, err)
 	scalar := priv.Scalar()
-	pub2, err := scalar.Commit()
-	pub3, _, err := NewKeyPairReduced(seed())
-	require.Nil(t, err)
-	require.Nil(t, err)
-	fmt.Println("pub:", pub)
-	fmt.Println("pub2:", pub2)
-	fmt.Println("pub3:", pub3)
+	pubp := scalar.Commit()
+	pub2 := scalar.CommitPublic()
 
 	assert.Equal(t, pub, pub2)
+	assert.Equal(t, pub, pubp.Public())
+}
+
+func TestEd25519ScalarMarshalling(t *testing.T) {
+	sc1 := NewScalar()
+
+	rev := make([]byte, len(_seed))
+	Reverse(_seed, rev)
+	sc1.SetBytes(rev)
+
+	buff, _ := sc1.MarshalBinary()
+	sc2 := NewScalar()
+	sc2.SetBytes(buff)
+
+	sc3 := NewScalar()
+	sc3.UnmarshalBinary(buff)
+
+	sc4 := NewScalar()
+	sc4.SetBytes(buff)
+
+	assert.True(t, sc1.Equal(sc2.Int))
+	assert.True(t, sc1.Equal(sc3.Int))
+	assert.True(t, sc1.Equal(sc4.Int))
 }

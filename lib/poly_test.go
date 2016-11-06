@@ -15,7 +15,7 @@ func TestPolyShare(t *testing.T) {
 	require.Nil(t, err)
 
 	secret := priv.Scalar()
-	poly, err := NewPoly(nil, priv, pub, k)
+	poly, err := NewPoly(nil, secret, pub.Point(), k)
 	require.Nil(t, err)
 
 	shares := make([]Share, k)
@@ -27,11 +27,11 @@ func TestPolyShare(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, secret.Equal(recons.Int))
 
-	recPub, err := recons.Commit()
+	recPub := recons.Commit()
 	require.Nil(t, err)
 	fmt.Println(recPub)
 	fmt.Println(pub)
-	assert.True(t, recPub.Equal(pub))
+	assert.Equal(t, recPub.Public(), pub)
 	// Not true because recPriv is already reduced
 	//assert.True(t, recPriv.Equal(priv))
 }
