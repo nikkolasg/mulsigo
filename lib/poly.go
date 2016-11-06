@@ -112,7 +112,7 @@ func Reconstruct(shares []Share, t, n uint32) (Scalar, error) {
 // DistPoly stands for Distributed Polynomial, just because I can't find a good
 // struct name for what it does:
 // - Create / Maintains a matrix of Poly
-// - Generate a share of the distributed secret
+// - Generate all shares for this node to help construct the distributed secret
 //      N1    N2    N3    N4 ... Nn
 // N1   s11   s12   s13   s14 .. s1n = poly1
 // N2   s21   s22   s23   s24 .. s2n = poly2

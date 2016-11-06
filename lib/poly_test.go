@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/alecthomas/assert"
@@ -29,8 +28,6 @@ func TestPolyShare(t *testing.T) {
 
 	recPub := recons.Commit()
 	require.Nil(t, err)
-	fmt.Println(recPub)
-	fmt.Println(pub)
 	assert.Equal(t, recPub.Public(), pub)
 	// Not true because recPriv is already reduced
 	//assert.True(t, recPriv.Equal(priv))
