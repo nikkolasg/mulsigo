@@ -224,6 +224,7 @@ func SchnorrSign(secret Scalar, msg []byte, random io.Reader) [SignatureSize]byt
 	k.SetBytes(h2.Sum(nil))
 
 	// s = r + k * secret
+	// TODO replace by const time
 	s := k.Mul(k.Int, secret.Int).Add(k.Int, r.Int)
 
 	// sig = R || s
