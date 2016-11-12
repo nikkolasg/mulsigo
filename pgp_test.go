@@ -8,9 +8,18 @@ import (
 	"os/exec"
 	"path"
 	"testing"
+	"time"
+
+	"golang.org/x/crypto/ed25519"
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/packet"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestPgpGolangSig(t *testing.T) {
+
+}
 
 func TestPgpValidSig(t *testing.T) {
 	dirName, err := ioutil.TempDir("", "mulsigo")
@@ -39,6 +48,14 @@ func TestPgpValidSig(t *testing.T) {
 	require.Nil(t, err)
 	dataFile, err := os.Create(dataFileName)
 	require.Nil(t, err)
+
+	pubCasted := ed25519.PublicKey([]byte(pub[:]))
+	var pgpPub = packet.NewEDDSAPublicKey(time.Now().Add(-20*time.Hour), &pubCasted)
+
+	entity, err := openpgp.NewEntity("Test Entity", " <yep> ", nil)
+	require.Nil(t, err)
+
+	pgpPub.Serialize(pubFile)
 
 	require.Nil(t, SerializePubKey(pubFile, pub[:], "test@test.test"))
 	r := sig[:32]

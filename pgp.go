@@ -83,7 +83,7 @@ func SerializePubKey(w io.Writer, pubKey []byte, userID string) (err error) {
 	// We prepend the pubKey with 0x40 to indicate that it is compressed cf.
 	// https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-00#section-13.3
 	pubKey = append([]byte{0x40}, pubKey...)
-	// Packet header (1 octet of size since size < 192)
+	// Packet header size + packet size (1 octet of size since size < 192)
 	length := 2
 	// Version number = 4
 	length += 1
