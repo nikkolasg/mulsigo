@@ -46,7 +46,7 @@ func CreateEd25519Key(batch string) {
 	cmd := exec.Command("gpg", createKeyArgs...)
 
 	if err := cmd.Run(); err != nil {
-		Fatal("error creating key with gpg")
+		Fatal("error creating key with gpg" + err.Error())
 	}
 }
 
