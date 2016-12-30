@@ -246,9 +246,10 @@ func sign(t *testing.T, priv *packet.PrivateKey, msg []byte) *packet.Signature {
 	}
 
 	sig := &packet.Signature{
-		PubKeyAlgo: PubKeyAlgoEDDSA,
-		Hash:       crypto.SHA256,
-		SigType:    packet.SigTypeBinary,
+		PubKeyAlgo:  PubKeyAlgoEDDSA,
+		Hash:        crypto.SHA256,
+		SigType:     packet.SigTypeBinary,
+		IssuerKeyId: &priv.KeyId,
 	}
 
 	h := crypto.SHA256.New()
