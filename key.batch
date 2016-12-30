@@ -1,0 +1,10 @@
+%no-protection
+Key-Type: eddsa
+Key-Curve: Ed25519
+Name-Real: Joe Tester
+Name-Comment: with stupid passphrase
+Name-Email: joe@foo.bar
+Expire-Date: 1m
+# Do a commit here, so that we can later print "done" :-)
+%commit
+%echo done

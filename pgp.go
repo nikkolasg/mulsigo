@@ -2,7 +2,7 @@
 // by the EDDSA module.
 // Most of the code is either directly taken or adapted from:
 // https://github.com/sriak/cothority/
-package lib
+package main
 
 import (
 	"bytes"

@@ -1,4 +1,4 @@
-package lib
+package main
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path"
 	"testing"
-	"time"
 
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/openpgp"
@@ -23,6 +22,9 @@ import (
 var name = "TestName"
 var email = "TestEmail"
 var comment = "TestComment"
+
+func TestGpgCreateAndParseEd25519(t *testing.T) {
+}
 
 func TestPgpGolangRSASig(t *testing.T) {
 	dirName, err := ioutil.TempDir("", "mulsigo")
@@ -134,119 +136,119 @@ func gpg2Import(dirName, fileName string, t *testing.T) {
 	require.Nil(t, err)
 }
 
-func TestPgpGolangSig(t *testing.T) {
-	dirName, err := ioutil.TempDir("", "mulsigo")
-	defer os.RemoveAll(dirName)
-	require.Nil(t, err)
-	var pubFileName = path.Join(dirName, "pub.pgp")
-	fmt.Println("Dirname: ", dirName)
+/*func TestPgpGolangSig(t *testing.T) {*/
+//dirName, err := ioutil.TempDir("", "mulsigo")
+//defer os.RemoveAll(dirName)
+//require.Nil(t, err)
+//var pubFileName = path.Join(dirName, "pub.pgp")
+//fmt.Println("Dirname: ", dirName)
 
-	pubFile, err := os.Create(pubFileName)
-	require.Nil(t, err)
+//pubFile, err := os.Create(pubFileName)
+//require.Nil(t, err)
 
-	var currentTime = time.Now().Add(-20 * time.Hour)
+//var currentTime = time.Now().Add(-20 * time.Hour)
 
-	_seed := "Hello World, I'm gonna be your seed during this test, would you?"
-	var seed = bytes.NewBuffer([]byte(_seed))
-	eddsaPub, eddsaPriv, err := ed25519.GenerateKey(seed)
-	pointer := ed25519.PrivateKey(eddsaPriv)
+//_seed := "Hello World, I'm gonna be your seed during this test, would you?"
+//var seed = bytes.NewBuffer([]byte(_seed))
+//eddsaPub, eddsaPriv, err := ed25519.GenerateKey(seed)
+//pointer := ed25519.PrivateKey(eddsaPriv)
 
-	eddsaPrivateKey := packet.NewEDDSAPrivateKey(time.Now(), &pointer)
-	pubCasted := ed25519.PublicKey([]byte(eddsaPub[:]))
-	var pgpPub = packet.NewEDDSAPublicKey(currentTime, &pubCasted)
+//eddsaPrivateKey := packet.NewEDDSAPrivateKey(time.Now(), &pointer)
+//pubCasted := ed25519.PublicKey([]byte(eddsaPub[:]))
+//var pgpPub = packet.NewEDDSAPublicKey(currentTime, &pubCasted)
 
-	uid := packet.NewUserId(name, email, comment)
-	require.NotNil(t, uid)
+//uid := packet.NewUserId(name, email, comment)
+//require.NotNil(t, uid)
 
-	primary := true
+//primary := true
 
-	SelfSignature := &packet.Signature{
-		CreationTime: currentTime,
-		SigType:      packet.SigTypePositiveCert,
-		PubKeyAlgo:   packet.PubKeyAlgoRSA,
-		Hash:         crypto.SHA256,
-		IsPrimaryId:  &primary,
-		FlagsValid:   true,
-		FlagSign:     true,
-		FlagCertify:  true,
-		IssuerKeyId:  &pgpPub.KeyId,
-	}
-	require.Nil(t, SelfSignature.SignUserId(uid.Id, pgpPub, eddsaPrivateKey, nil))
+//SelfSignature := &packet.Signature{
+//CreationTime: currentTime,
+//SigType:      packet.SigTypePositiveCert,
+//PubKeyAlgo:   packet.PubKeyAlgoRSA,
+//Hash:         crypto.SHA256,
+//IsPrimaryId:  &primary,
+//FlagsValid:   true,
+//FlagSign:     true,
+//FlagCertify:  true,
+//IssuerKeyId:  &pgpPub.KeyId,
+//}
+//require.Nil(t, SelfSignature.SignUserId(uid.Id, pgpPub, eddsaPrivateKey, nil))
 
-	// serialize
-	require.Nil(t, pgpPub.Serialize(pubFile))
-	require.Nil(t, uid.Serialize(pubFile))
-	require.Nil(t, SelfSignature.Serialize(pubFile))
+//// serialize
+//require.Nil(t, pgpPub.Serialize(pubFile))
+//require.Nil(t, uid.Serialize(pubFile))
+//require.Nil(t, SelfSignature.Serialize(pubFile))
 
-	require.Nil(t, pubFile.Close())
-	var out bytes.Buffer
-	cmd := exec.Command("gpg2", "--homedir", dirName, "--import", pubFileName)
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err = cmd.Run()
-	fmt.Println(cmd.Args)
-	fmt.Println(out.String())
-	require.Nil(t, err)
-}
+//require.Nil(t, pubFile.Close())
+//var out bytes.Buffer
+//cmd := exec.Command("gpg2", "--homedir", dirName, "--import", pubFileName)
+//cmd.Stdout = &out
+//cmd.Stderr = &out
+//err = cmd.Run()
+//fmt.Println(cmd.Args)
+//fmt.Println(out.String())
+//require.Nil(t, err)
+//}
 
-func TestPgpValidSig(t *testing.T) {
-	dirName, err := ioutil.TempDir("", "mulsigo")
-	defer os.RemoveAll(dirName)
-	require.Nil(t, err)
-	var pubFileName = path.Join(dirName, "pub.pgp")
-	var dataFileName = path.Join(dirName, "data")
-	var sigFileName = path.Join(dirName, "data.sig")
-	fmt.Println("Dirname: ", dirName)
+//func TestPgpValidSig(t *testing.T) {
+//dirName, err := ioutil.TempDir("", "mulsigo")
+//defer os.RemoveAll(dirName)
+//require.Nil(t, err)
+//var pubFileName = path.Join(dirName, "pub.pgp")
+//var dataFileName = path.Join(dirName, "data")
+//var sigFileName = path.Join(dirName, "data.sig")
+//fmt.Println("Dirname: ", dirName)
 
-	pub, priv, err := NewKeyPair(nil)
-	require.Nil(t, err)
-	privScalar := priv.Scalar()
+//pub, priv, err := NewKeyPair(nil)
+//require.Nil(t, err)
+//privScalar := priv.Scalar()
 
-	var msg = []byte("Hello World")
-	h := sha256.New()
-	HashMessage(h, msg)
-	var preHashed = h.Sum(nil)
-	sig := SchnorrSign(privScalar, preHashed, nil)
+//var msg = []byte("Hello World")
+//h := sha256.New()
+//HashMessage(h, msg)
+//var preHashed = h.Sum(nil)
+//sig := SchnorrSign(privScalar, preHashed, nil)
 
-	require.True(t, SchnorrVerify(pub, preHashed, sig))
+//require.True(t, SchnorrVerify(pub, preHashed, sig))
 
-	pubFile, err := os.Create(pubFileName)
-	require.Nil(t, err)
-	sigFile, err := os.Create(sigFileName)
-	require.Nil(t, err)
-	dataFile, err := os.Create(dataFileName)
-	require.Nil(t, err)
+//pubFile, err := os.Create(pubFileName)
+//require.Nil(t, err)
+//sigFile, err := os.Create(sigFileName)
+//require.Nil(t, err)
+//dataFile, err := os.Create(dataFileName)
+//require.Nil(t, err)
 
-	pubCasted := ed25519.PublicKey([]byte(pub[:]))
-	var pgpPub = packet.NewEDDSAPublicKey(time.Now().Add(-20*time.Hour), &pubCasted)
+//pubCasted := ed25519.PublicKey([]byte(pub[:]))
+//var pgpPub = packet.NewEDDSAPublicKey(time.Now().Add(-20*time.Hour), &pubCasted)
 
-	pgpPub.Serialize(pubFile)
+//pgpPub.Serialize(pubFile)
 
-	require.Nil(t, SerializePubKey(pubFile, pub[:], "test@test.test"))
-	r := sig[:32]
-	s := sig[32:]
-	require.Nil(t, SerializeSignature(sigFile, msg, pub[:], r, s))
+//require.Nil(t, SerializePubKey(pubFile, pub[:], "test@test.test"))
+//r := sig[:32]
+//s := sig[32:]
+//require.Nil(t, SerializeSignature(sigFile, msg, pub[:], r, s))
 
-	dataFile.Write(msg)
+//dataFile.Write(msg)
 
-	pubFile.Close()
-	sigFile.Close()
-	dataFile.Close()
+//pubFile.Close()
+//sigFile.Close()
+//dataFile.Close()
 
-	cmd := exec.Command("gpg2", "--homedir", dirName, "--allow-non-selfsigned-uid", "--import", pubFileName)
-	cmd.Stdout = os.Stdout
-	require.Nil(t, cmd.Run())
+//cmd := exec.Command("gpg2", "--homedir", dirName, "--allow-non-selfsigned-uid", "--import", pubFileName)
+//cmd.Stdout = os.Stdout
+//require.Nil(t, cmd.Run())
 
-	cmd = exec.Command("gpg2", "--homedir", dirName, "--allow-non-selfsigned-uid", "--ignore-time-conflict", "--verify", sigFileName)
-	cmd.Stdout = os.Stdout
-	require.Nil(t, cmd.Run())
+//cmd = exec.Command("gpg2", "--homedir", dirName, "--allow-non-selfsigned-uid", "--ignore-time-conflict", "--verify", sigFileName)
+//cmd.Stdout = os.Stdout
+//require.Nil(t, cmd.Run())
 
-	//cmd = exec.Command("rm", "-rf", dirName)
-	//cmd.Run()
-}
+////cmd = exec.Command("rm", "-rf", dirName)
+////cmd.Run()
+//}
 
 // exists returns whether the given file or directory exists or not
-func exists(path string) (bool, error) {
+func path_exists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
 		return true, nil

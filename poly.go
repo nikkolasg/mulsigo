@@ -1,6 +1,6 @@
 // This file implements the polynomial sharing code.
 // Heavily inspired from github.com/dedis/crypto/poly/sharing.go
-package lib
+package main
 
 import (
 	"errors"

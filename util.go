@@ -1,11 +1,17 @@
-package lib
+package main
 
 import (
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 )
+
+func Fatal(txt string, formatter ...interface{}) {
+	fmt.Fprintf(os.Stderr, txt, formatter)
+	os.Exit(1)
+}
 
 // RandomBytes fills buff from the given reader or crypto.Rand(omness) if reader
 // == nil. If there is any problem or the read did not take len(buff) bytes,
@@ -38,4 +44,11 @@ func Reverse(src, dst []byte) error {
 		dst[n-i-1] = src[i]
 	}
 	return nil
+}
+
+func exists(fname string) bool {
+	if _, err := os.Stat(fname); os.IsNotExist(err) {
+		return false
+	}
+	return true
 }

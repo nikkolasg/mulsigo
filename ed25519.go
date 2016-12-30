@@ -1,7 +1,8 @@
 // ed25519 implements all the necessary constant time operations
 // for scalars and  points on the ed25519 curve.
-// This code is heavily inspired from https://github.com/agl/ed25519.
-package lib
+// This code is heavily inspired from https://github.com/agl/ed25519 and from
+// https://github.com/dedis/crypto.
+package main
 
 import (
 	"crypto/sha512"
