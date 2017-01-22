@@ -88,4 +88,6 @@ the proxy any messages, or less than t.
 
 ## license
 
-AGPL
+All code inside this repository is under the AGPL license. See LICENSE for more
+information.
+
