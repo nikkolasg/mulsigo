@@ -4,6 +4,11 @@ mulsigo is a tool enabling a group of person to sign a message without ever the
 private key being stored somewhere. The resulting signature is a valid gpg (> 2.1) 
 signature and corresponds to a single public key.
 
+## Disclaimer
+
+**WARNING**: This software has not been peer reviewed at all, and is likely to
+be full of exploitable bugs. USE AT YOUR OWN RISK.
+
 ## How does it work ?
 
 Here's a draft-ish operational flow of the framework.
@@ -80,3 +85,7 @@ of the manual verification of the signature (later, this could be changed to a
 BFT-CoSi signature to avoid an additional manual check). During the signing
 process, a compromised server is capable of DDoS-ing the protocol by refusing
 the proxy any messages, or less than t.
+
+## license
+
+AGPL
