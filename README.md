@@ -4,6 +4,8 @@ mulsigo is a tool enabling a group of person to sign a message without ever the
 private key being stored somewhere. The resulting signature is a valid gpg (> 2.1) 
 signature and corresponds to a single public key.
 
+(UNDER DEVELOPMENT)
+
 ## Disclaimer
 
 **WARNING**: This software has not been peer reviewed at all, and is likely to
