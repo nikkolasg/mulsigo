@@ -1,8 +1,10 @@
 # mulsigo
 
 mulsigo is a tool enabling a group of person to sign a message without ever the
-private key being stored somewhere. The resulting signature is a valid gpg (> 2.1) 
-signature and corresponds to a single public key.
+private key being neither generated at one place nor stored at one place. The 
+resulting public key is a valid EdDSA public key and the signatures are valid EdDSA
+signatures using Ed25519 (without any context,so the "old" draft RFC). One can import 
+such a public key with a recent gpg version (> 2.1).
 
 (UNDER DEVELOPMENT)
 
@@ -27,7 +29,7 @@ Here's a draft-ish operational flow of the framework.
    use.
 
 This whole step can also be done manually by copy/paste each individual public
-key into a single group file and distribute that file.
+key into a single group file and distribute that file to each participant.
 
 ### Distributed longterm key creation
   
