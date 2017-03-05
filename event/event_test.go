@@ -28,13 +28,17 @@ func newTestProcessor() *TestProcessor {
 	}
 }
 
-func (tp *TestProcessor) Process(e Event) {
+func (tp *TestProcessor) Receive(e Event) {
 	tp.chEvent <- e
 }
 
 func TestSimpleDispatcherRegistration(t *testing.T) {
 	d := NewSimpleDispatcher()
 	proc := newTestProcessor()
+
+	d.Register(testEventName, proc)
+	assert.Equal(t, len(d.registered[testEventName]), 1)
+	assert.Equal(t, d.registered[testEventName][0], proc)
 
 	d.Register(testEventName, proc)
 	assert.Equal(t, len(d.registered[testEventName]), 1)
@@ -55,7 +59,7 @@ func TestSimpleDispatcherDispatch(t *testing.T) {
 
 	d.Register(testEventName, proc)
 
-	go d.Dispatch(&TestEvent{10})
+	go d.Publish(&TestEvent{10})
 
 	select {
 	case ev := <-proc.chEvent:

@@ -6,31 +6,31 @@ type Event interface {
 	Name() string
 }
 
-type Processor interface {
-	Process(e Event)
+type Receiver interface {
+	Receive(e Event)
 }
 
-type Dispatcher interface {
-	Register(name string, p Processor)
+type Publisher interface {
+	Register(name string, p Receiver)
 
-	Unregister(name string, p Processor)
+	Unregister(name string, p Receiver)
 
-	Dispatch(e Event)
+	Publish(e Event)
 }
 
 type simpleDispatcher struct {
 	sync.Mutex
 
-	registered map[string][]Processor
+	registered map[string][]Receiver
 }
 
 func NewSimpleDispatcher() *simpleDispatcher {
 	return &simpleDispatcher{
-		registered: make(map[string][]Processor),
+		registered: make(map[string][]Receiver),
 	}
 }
 
-func (s *simpleDispatcher) Register(e string, p Processor) {
+func (s *simpleDispatcher) Register(e string, p Receiver) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -42,7 +42,7 @@ func (s *simpleDispatcher) Register(e string, p Processor) {
 	s.registered[e] = append(s.registered[e], p)
 }
 
-func (s *simpleDispatcher) Unregister(e string, p Processor) {
+func (s *simpleDispatcher) Unregister(e string, p Receiver) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -65,11 +65,11 @@ func (s *simpleDispatcher) Unregister(e string, p Processor) {
 	s.registered[e] = arr[:len(arr)-1]
 }
 
-func (s *simpleDispatcher) Dispatch(e Event) {
+func (s *simpleDispatcher) Publish(e Event) {
 	s.Lock()
 	defer s.Unlock()
 
 	for _, p := range s.registered[e.Name()] {
-		p.Process(e)
+		p.Receive(e)
 	}
 }
