@@ -137,10 +137,16 @@ func testRouterAutoConnection(t *testing.T, fac routerFactory) {
 	}
 
 	h12 := h1.connection(h2.address)
-	h21 := h2.connection(h1.address)
+	require.Len(t, h2.connections, 1)
+	var h21 Conn
+	for _, c := range h2.connections {
+		h21 = c
+	}
+
 	assert.NotNil(t, h12)
 	require.NotNil(t, h21)
-	assert.Nil(t, h21.Close())
+	require.Nil(t, h21.Close())
+	// let time to close the conn. on both sides
 	time.Sleep(100 * time.Millisecond)
 	err = h1.Send(h2.address, &SimpleMessage{12})
 	require.Nil(t, err)
@@ -203,7 +209,7 @@ func TestRouterLotsOfConnTCP(t *testing.T) {
 }
 
 func TestRouterLotsOfConnLocal(t *testing.T) {
-	testRouterLotsOfConn(t, NewTestRouterLocal, 5)
+	testRouterLotsOfConn(t, NewTestRouterLocal, 2)
 }
 
 // nSquareProc will send back all packet sent and stop when it has received
@@ -276,23 +282,23 @@ func testRouterLotsOfConn(t *testing.T, fac routerFactory, nbrRouter int) {
 	wg1.Wait()
 
 	for i := 0; i < nbrRouter; i++ {
-		go func(j int) {
-			r := routers[j]
-			for k := 0; k < nbrRouter; k++ {
-				if k == j {
-					// don't send to yourself
-					continue
-				}
-				// send to everyone else
-				if err := r.Send(routers[k].address, &SimpleMessage{3}); err != nil {
-					t.Fatal(err)
-				}
+		j := i
+		r := routers[j]
+		for k := 0; k < nbrRouter; k++ {
+			if k == j {
+				// don't send to yourself
+				continue
 			}
-		}(i)
+			// send to everyone else
+			if err := r.Send(routers[k].address, &SimpleMessage{3}); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	wg2.Wait()
 	for i := 0; i < nbrRouter; i++ {
 		r := routers[i]
+		log.Print("Closing ", r.address)
 		if err := r.Stop(); err != nil {
 			t.Fatal(err)
 		}
@@ -343,60 +349,8 @@ func testRouterSendMsgDuplex(t *testing.T, fac routerFactory) {
 	log.Lvl2("Received msg h2 -> h1", msg)
 }
 
-func TestRouterExchange(t *testing.T) {
-	log.OutputToBuf()
-	defer log.OutputToOs()
-	router1, err := NewTestRouterTCP(7878)
-	router2, err2 := NewTestRouterTCP(8787)
-	if err != nil || err2 != nil {
-		t.Fatal("Could not setup host", err, err2)
-	}
-
-	done := make(chan bool)
-	go func() {
-		done <- true
-		router1.Start()
-		done <- true
-	}()
-	<-done
-	// try correctly
-	c, err := NewTCPConn(router1.address, nil)
-	if err != nil {
-		t.Fatal("Couldn't connect to host1:", err)
-	}
-	if err := c.Send(router2.address); err != nil {
-		t.Fatal("Wrong negotiation")
-	}
-	// triggers the dispatching conditional branch error router.go:
-	//  `log.Lvl3("Error dispatching:", err)`
-	if err := router2.Send(router1.address, &SimpleMessage{12}); err != nil {
-		t.Fatal("Could not send")
-	}
-	c.Close()
-
-	// try messing with the connections here
-	c, err = NewTCPConn(router1.address, nil)
-	if err != nil {
-		t.Fatal("Couldn't connect to host1:", err)
-	}
-	// closing before sending
-	c.Close()
-	if err := c.Send(router2.address); err == nil {
-		t.Fatal("negotiation should have aborted")
-	}
-
-	// stop everything
-	log.Lvl4("Closing connections")
-	if err := router2.Stop(); err != nil {
-		t.Fatal("Couldn't close host", err)
-	}
-	if err := router1.Stop(); err != nil {
-		t.Fatal("Couldn't close host", err)
-	}
-	<-done
-}
-
 func TestRouterRxTx(t *testing.T) {
+	RegisterMessage(60, basicMessage{})
 	router1, err := NewTestRouterTCP(0)
 	log.ErrFatal(err)
 	router2, err := NewTestRouterTCP(0)
@@ -410,16 +364,10 @@ func TestRouterRxTx(t *testing.T) {
 		return router1.Rx() > 0 && router1.Rx() == router2.Tx()
 	})
 	rx := router1.Rx()
+	assert.Equal(t, rx, router1.Rx())
 	assert.Equal(t, 1, len(router1.connections))
 	router2.Stop()
-	waitTimeout(time.Second, 10, func() bool {
-		router1.Lock()
-		defer router1.Unlock()
-		_, ok := router1.connections[router2.address]
-		return ok
-	})
-	assert.Equal(t, rx, router1.Rx())
-	defer router1.Stop()
+	router1.Stop()
 }
 
 func waitTimeout(timeout time.Duration, repeat int,

@@ -471,7 +471,7 @@ func TestHandleError(t *testing.T) {
 
 func NewTestTCPHost(port int) (*TCPHost, error) {
 	addr := NewTCPAddress("127.0.0.1:" + strconv.Itoa(port))
-	return NewTCPHost(addr, basicMessageEncoder)
+	return NewTCPHost(addr, nil)
 }
 
 // SimpleMessage is just used to transfer one integer

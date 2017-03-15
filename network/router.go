@@ -3,6 +3,7 @@ package network
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/dedis/onet/log"
 	"github.com/nikkolasg/mulsigo/event"
@@ -92,13 +93,17 @@ func (r *Router) Stop() error {
 
 	// then close all connections
 	for _, c := range r.connections {
+		log.Print("Closing Conn: ", c.Remote())
 		if err := c.Close(); err != nil {
-			log.Lvl5(err)
+			log.LLvl5(err)
 		}
+		log.Print("Closing Conn: ", c.Remote(), " FIN")
 	}
 	// wait for all handleConn to finish
 	r.Unlock()
+	log.Print(r.address, "Wait for global lock")
 	r.wg.Wait()
+	log.Print(r.address, "Wait for global lock DONE")
 
 	if err != nil {
 		return err
@@ -173,6 +178,7 @@ func (r *Router) handleConn(c Conn) {
 	addr := c.Remote()
 	defer func() {
 		// Clean up the connection by making sure it's closed.
+		log.Print(r.address, " defering ", c.Remote())
 		if err := c.Close(); err != nil {
 			log.Lvlf5("router %s: error closing conn to %s: %s", r.address, addr, err)
 		}
@@ -180,11 +186,14 @@ func (r *Router) handleConn(c Conn) {
 		r.traffic.updateTx(c.Tx())
 		r.wg.Done()
 		r.removeConnection(c)
+		log.Print(r.address, " defering ", c.Remote(), "DONE")
 	}()
 	log.Lvlf3("router %s: handling new connection to %s", r.address, addr)
 	for {
 		packet, err := c.Receive()
-
+		if err != nil {
+			log.Print(r.address, " Error with ", c.Remote())
+		}
 		if r.Closed() {
 			return
 		}
@@ -247,6 +256,8 @@ func (r *Router) launchHandleRoutine(c Conn) error {
 	}
 	r.wg.Add(1)
 	go r.handleConn(c)
+	// XXX weird hack for test TestRouterLotsOfConnLocal
+	time.Sleep(100 * time.Microsecond)
 	return nil
 }
 

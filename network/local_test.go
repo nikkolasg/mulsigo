@@ -290,7 +290,7 @@ func testLocalConn(t *testing.T, a1, a2 Address) {
 func TestLocalManyConn(t *testing.T) {
 	nbrConn := 3
 	addr := NewLocalAddress("127.0.0.1:2000")
-	listener, err := NewLocalListener(addr, localEncoder)
+	listener, err := NewLocalListener(addr, nil)
 	if err != nil {
 		t.Fatal("Could not setup listener:", err)
 	}
@@ -347,7 +347,7 @@ func waitListeningUp(addr Address) bool {
 
 func NewTestLocalHost(port int) (*LocalHost, error) {
 	addr := NewLocalAddress("127.0.0.1:" + strconv.Itoa(port))
-	return NewLocalHost(addr, localEncoder)
+	return NewLocalHost(addr, nil)
 }
 
 type AddressTest struct {
