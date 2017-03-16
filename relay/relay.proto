@@ -7,7 +7,9 @@ message RelayMessage {
 
     LeaveMessage leave = 11;
 
-    ChannelIncomingMessage  msg = 12;
+    ChannelIncomingMessage  incoming = 12;
+
+    ChannelOutgoingMessage outgoing = 13;
 }
 
 message JoinMessage {

@@ -28,7 +28,7 @@ const (
 	// Local is a channel based connection type.
 	Local = "local"
 	// InvalidConnType is an invalid connection type.
-	InvalidConnType = "wrong"
+	InvalidConnType = "invalid"
 )
 
 // typeAddressSep is the separator between the type of the connection and the actual
@@ -52,9 +52,6 @@ func connType(t string) ConnType {
 // It returns InvalidConnType if the address is not valid or if the
 // connection type is not known.
 func (a Address) ConnType() ConnType {
-	if !a.Valid() {
-		return InvalidConnType
-	}
 	vals := strings.Split(string(a), typeAddressSep)
 	return connType(vals[0])
 }

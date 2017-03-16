@@ -26,7 +26,7 @@ func TestConnType(t *testing.T) {
 	}
 }
 
-func TestAddress(t *testing.T) {
+func TestTCPAddress(t *testing.T) {
 	var tests = []struct {
 		Value   string
 		Valid   bool

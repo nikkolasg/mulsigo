@@ -365,7 +365,7 @@ func NewLocalListenerWithManager(lm *LocalManager, addr Address, e Encoder) (*Lo
 		manager: lm,
 	}
 	if addr.ConnType() != Local {
-		return nil, errors.New("Wrong address type for local listener")
+		return nil, fmt.Errorf("locallistener: can't handle type %s", addr.ConnType())
 	}
 	if l.manager.isListening(addr) {
 		return nil, fmt.Errorf("%s is already listening: can't listen again", addr)
