@@ -1,0 +1,39 @@
+
+syntax = "proto3";
+
+message RelayMessage {
+
+    JoinMessage join = 10;
+
+    LeaveMessage leave = 11;
+
+    ChannelIncomingMessage  incoming = 12;
+
+    ChannelOutgoingMessage outgoing = 13;
+}
+
+message JoinMessage {
+    
+    string channel = 1;
+}
+
+message LeaveMessage {
+ 
+    string channel = 1;
+}
+
+message ChannelIncomingMessage {
+
+    string channel = 1;
+
+    bytes blob = 2;
+}
+
+message ChannelOutgoingMessage {
+
+    string channel = 1;
+
+    string address = 2;
+
+    bytes blob = 3;
+}
