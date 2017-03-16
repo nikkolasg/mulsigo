@@ -54,6 +54,7 @@ func (s *simpleDispatcher) Unregister(e string, p Receiver) {
 	for i, pp := range arr {
 		if pp == p {
 			idx = i
+			break
 		}
 	}
 	if idx == -1 {
