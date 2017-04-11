@@ -1,9 +1,6 @@
 package relay
 
 import (
-	"errors"
-	"sync"
-
 	"github.com/dedis/onet/log"
 	net "github.com/nikkolasg/mulsigo/network"
 )
@@ -12,124 +9,124 @@ import (
 // by an ID. Each participant can broadcast message to a channel and receive
 // message from others on the same channel.
 type channel struct {
-	id string
-	// all clients registered to that channel
-	clients []net.Address
-	sync.Mutex
-
-	router *net.Router
-	out    chan messageInfo
+	id       string               // id of the channel
+	relay    *Relay               // router to send messages
+	incoming chan messageInfo     // incoming message coming from the router
+	join     chan net.Address     // join message
+	leave    chan net.Address     // leave message
+	finished chan bool            // stop signal from the router
+	clients  map[net.Address]bool // list of clients. Not concurrent safe.
 }
 
 // newChannel returns a new channel identified by "id". It launches the
 // processing routine.
-func newChannel(r *net.Router, id string) *channel {
+func newChannel(r *Relay, id string) *channel {
 	ch := &channel{
-		id:     id,
-		out:    make(chan messageInfo, ChannelQueueSize),
-		router: r,
+		id:       id,
+		incoming: make(chan messageInfo, ChannelQueueSize),
+		join:     make(chan net.Address, ChannelSize),
+		leave:    make(chan net.Address, ChannelSize),
+		finished: make(chan bool, 1),
+		relay:    r,
+		clients:  make(map[net.Address]bool),
 	}
 	go ch.process()
 	return ch
 }
 
-func (ch *channel) broadcast(from net.Address, msg []byte) {
-	ch.out <- messageInfo{msg, from}
+func (ch *channel) newMessage(from net.Address, incoming *RelayMessage) {
+	switch incoming.GetType() {
+	case RelayMessage_JOIN:
+		ch.join <- from
+	case RelayMessage_LEAVE:
+		ch.leave <- from
+	case RelayMessage_INGRESS:
+		ch.incoming <- messageInfo{from, incoming.GetIngress()}
+	default:
+		log.Error("channel: unknown message type")
+	}
 }
 
-// process reads continuously from the inner channel (Golang) of the channel
-// (struct). Each message read, is broadcasted to every participant, except for
-// the sender.
 func (ch *channel) process() {
-	for info := range ch.out {
-		msg := info.msg
-		addr := info.address
-		toBroadcast := &RelayMessage{
-			Outgoing: &ChannelOutgoingMessage{
-				Channel: ch.id,
-				Address: addr.String(),
-				Blob:    msg,
-			},
-		}
-
-		ch.Lock()
-		var found bool
-		for _, c := range ch.clients {
-			if c == addr {
-				found = true
+	clients := ch.clients
+	for {
+		select {
+		case <-ch.finished:
+			return
+		case addr := <-ch.join:
+			log.Lvl2("channel", ch.id, ": adding client", addr.String())
+			ch.addClient(addr)
+		case addr := <-ch.leave:
+			delete(clients, addr)
+			if len(clients) == 0 {
+				// delete this channel
+				ch.relay.deleteChannel(ch.id)
+				return
 			}
-		}
-		if !found {
-			// message coming from a non-registered user: just drop.
-			ch.Unlock()
-			continue
-		}
-
-		for _, c := range ch.clients {
-			if c == addr {
+		case info := <-ch.incoming:
+			ingress := info.msg
+			addr := info.address
+			_, ok := clients[addr]
+			if !ok {
+				// unknown user
+				log.Lvl2("channel: msg from unregistered user")
 				continue
 			}
-			// XXX change to a more abstract way
-			if err := ch.router.Send(c, toBroadcast); err != nil {
-				log.Errorf("channel %d: %s: %s", ch.id, c, err)
+
+			rm := &RelayMessage{
+				Channel: ch.id,
+				Egress: &Egress{
+					Address: addr.String(),
+					Blob:    ingress.GetBlob(),
+				},
+			}
+
+			for c := range clients {
+				if c == addr {
+					continue
+				}
+				// XXX change to a more abstract way
+				if err := ch.relay.router.Send(c, rm); err != nil {
+					log.Errorf("channel %d: %s: %s", ch.id, c, err)
+				}
 			}
 		}
-		ch.Unlock()
 	}
 }
 
-// addClient takes a client and adds it to the list of registered client for
-// this channel. It returns an error if the channel is already full (i.e. more
-// than ChannelSize), or if the client is already registered. Otherwise, it
-// returns nil.
-func (ch *channel) addClient(client net.Address) error {
-	ch.Lock()
-	defer ch.Unlock()
-
-	if len(ch.clients) >= ChannelSize {
-		return errors.New("channel: can't join a full channel")
+// addClient adds the client to the list of local clients if capacity is not
+// exceeded and replay with a JOIN_ACK message.
+func (ch *channel) addClient(client net.Address) {
+	_, ok := ch.clients[client]
+	if ok {
+		// already registered user -> no op
+		return
 	}
-
-	for _, c := range ch.clients {
-		if c == client {
-			return errors.New("channel: already registered")
-		}
+	if len(ch.clients) < ChannelSize {
+		ch.clients[client] = true
+		return
 	}
-	ch.clients = append(ch.clients, client)
-	return nil
-}
-
-// removeClient takes a client and removes it from the list of registered client
-// for this channel. It returns true if the channel can be deleted as there is
-// no more client left for this channel. It returns false otherwise.
-func (ch *channel) removeClient(client net.Address) bool {
-	ch.Lock()
-	defer ch.Unlock()
-	nClients := ch.clients[:0]
-	for _, c := range ch.clients {
-		if c == client {
-			continue
-		}
-		nClients = append(nClients, c)
+	jr := &JoinResponse{
+		Status: JoinResponse_FAILURE,
+		Reason: "channel: can't join a full channel",
 	}
-	ch.clients = nClients
-	if len(ch.clients) == 0 {
-		return true
+	log.Lvl2("adding client", client)
+	if err := ch.relay.router.Send(client, &RelayMessage{
+		Type:         RelayMessage_JOIN_RESPONSE,
+		JoinResponse: jr,
+	}); err != nil {
+		log.Error(err)
 	}
-	return false
 }
 
 // stop makes the channel stop for processing messages.
 func (ch *channel) stop() {
-	ch.Lock()
-	defer ch.Unlock()
-	close(ch.out)
-	ch.clients = nil
+	close(ch.finished)
 }
 
 // messageInfo is a simple wrapper to wrap the sender of a message to the
 // message in question.
 type messageInfo struct {
-	msg     []byte
 	address net.Address
+	msg     *Ingress
 }

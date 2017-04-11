@@ -3,37 +3,44 @@ syntax = "proto3";
 
 message RelayMessage {
 
-    JoinMessage join = 10;
+    string channel = 1;
 
-    LeaveMessage leave = 11;
+    enum TYPE {
+        JOIN = 0;
+        JOIN_RESPONSE = 1;
+        LEAVE = 2;
+        INGRESS = 3; // from relay's point of view,i.e to-be-broadcasted message
+        EGRESS = 4; // from relay's point of view,i.e. broadcasted message
+    }
+    TYPE type = 2;
 
-    ChannelIncomingMessage  incoming = 12;
+    JoinResponse joinResponse = 3;
 
-    ChannelOutgoingMessage outgoing = 13;
-}
-
-message JoinMessage {
+    Ingress ingress  = 4;
     
-    string channel = 1;
+    Egress egress = 5;
+    
 }
 
-message LeaveMessage {
- 
-    string channel = 1;
+message JoinResponse {
+    
+    enum STATUS {
+        OK = 0;
+        FAILURE = 1;
+    }
+
+    STATUS status = 1;
+    string reason = 2;
 }
 
-message ChannelIncomingMessage {
+message Ingress {
 
-    string channel = 1;
+    bytes blob = 1;
+}
+
+message Egress  {
+
+    string address = 1;
 
     bytes blob = 2;
-}
-
-message ChannelOutgoingMessage {
-
-    string channel = 1;
-
-    string address = 2;
-
-    bytes blob = 3;
 }

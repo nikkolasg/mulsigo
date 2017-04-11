@@ -2,6 +2,7 @@ package relay
 
 import (
 	"testing"
+	"time"
 
 	"github.com/dedis/onet/log"
 	net "github.com/nikkolasg/mulsigo/network"
@@ -27,57 +28,39 @@ func TestMain(m *testing.M) {
 	log.MainTest(m)
 }
 
-func TestRelayJoinLeave(t *testing.T) {
-	router, err := net.NewLocalRouter(rAddr, enc)
-	require.Nil(t, err)
-
-	relay := NewRelay(router)
-
-	jm := &JoinMessage{
-		Channel: chanId1,
-	}
-	assert.Nil(t, relay.channels[chanId1])
-	relay.joinChannel(cAddr1, jm)
-	assert.NotNil(t, relay.channels[chanId1])
-
-	relay.joinChannel(cAddr2, jm)
-	assert.NotNil(t, relay.channels[chanId1])
-
-	wrongLm := &LeaveMessage{
-		Channel: "arthur",
-	}
-
-	relay.leaveChannel(cAddr1, wrongLm)
-	assert.NotNil(t, relay.channels[chanId1])
-
-	lm := &LeaveMessage{
-		Channel: chanId1,
-	}
-	relay.leaveChannel(cAddr1, lm)
-	assert.NotNil(t, relay.channels[chanId1])
-
-	relay.leaveChannel(cAddr2, lm)
-	assert.Nil(t, relay.channels[chanId1])
-}
-
 func TestRelayProcess(t *testing.T) {
 	router, err := net.NewLocalRouter(rAddr, enc)
 	require.Nil(t, err)
 
 	relay := NewRelay(router)
+	go relay.Start()
+	defer relay.Stop()
 
+	log.TestOutput(true, 2)
 	log.OutputToBuf()
 	relay.Process(cAddr1, &wrongMessage{10})
 	relay.Process(cAddr1, &RelayMessage{})
 
 	require.Nil(t, relay.channels[chanId1])
-	relay.Process(cAddr1, &RelayMessage{Join: &JoinMessage{chanId1}})
+	relay.Process(cAddr1, &RelayMessage{
+		Type:    RelayMessage_JOIN,
+		Channel: chanId1,
+	})
 	assert.NotNil(t, relay.channels[chanId1])
 
-	relay.Process(cAddr1, &RelayMessage{Leave: &LeaveMessage{chanId1}})
+	relay.Process(cAddr1, &RelayMessage{
+		Type:    RelayMessage_LEAVE,
+		Channel: chanId1})
+	time.Sleep(10 * time.Millisecond)
 	assert.Nil(t, relay.channels[chanId1])
 
-	relay.Process(cAddr2, &RelayMessage{Incoming: &ChannelIncomingMessage{chanId2, nil}})
-	assert.True(t, log.ContainsStdErr("does not exist"))
+	relay.Process(cAddr2, &RelayMessage{
+		Channel: chanId2,
+		Type:    RelayMessage_INGRESS,
+		Ingress: &Ingress{
+			Blob: []byte("hell"),
+		}})
+	time.Sleep(10 * time.Millisecond)
+	assert.True(t, log.ContainsStdOut("unregistered"))
 	log.OutputToOs()
 }

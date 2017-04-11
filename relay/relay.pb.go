@@ -10,10 +10,9 @@ It is generated from these files:
 
 It has these top-level messages:
 	RelayMessage
-	JoinMessage
-	LeaveMessage
-	ChannelIncomingMessage
-	ChannelOutgoingMessage
+	JoinResponse
+	Ingress
+	Egress
 */
 package relay
 
@@ -32,11 +31,63 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
+type RelayMessage_TYPE int32
+
+const (
+	RelayMessage_JOIN          RelayMessage_TYPE = 0
+	RelayMessage_JOIN_RESPONSE RelayMessage_TYPE = 1
+	RelayMessage_LEAVE         RelayMessage_TYPE = 2
+	RelayMessage_INGRESS       RelayMessage_TYPE = 3
+	RelayMessage_EGRESS        RelayMessage_TYPE = 4
+)
+
+var RelayMessage_TYPE_name = map[int32]string{
+	0: "JOIN",
+	1: "JOIN_RESPONSE",
+	2: "LEAVE",
+	3: "INGRESS",
+	4: "EGRESS",
+}
+var RelayMessage_TYPE_value = map[string]int32{
+	"JOIN":          0,
+	"JOIN_RESPONSE": 1,
+	"LEAVE":         2,
+	"INGRESS":       3,
+	"EGRESS":        4,
+}
+
+func (x RelayMessage_TYPE) String() string {
+	return proto.EnumName(RelayMessage_TYPE_name, int32(x))
+}
+func (RelayMessage_TYPE) EnumDescriptor() ([]byte, []int) { return fileDescriptor0, []int{0, 0} }
+
+type JoinResponse_STATUS int32
+
+const (
+	JoinResponse_OK      JoinResponse_STATUS = 0
+	JoinResponse_FAILURE JoinResponse_STATUS = 1
+)
+
+var JoinResponse_STATUS_name = map[int32]string{
+	0: "OK",
+	1: "FAILURE",
+}
+var JoinResponse_STATUS_value = map[string]int32{
+	"OK":      0,
+	"FAILURE": 1,
+}
+
+func (x JoinResponse_STATUS) String() string {
+	return proto.EnumName(JoinResponse_STATUS_name, int32(x))
+}
+func (JoinResponse_STATUS) EnumDescriptor() ([]byte, []int) { return fileDescriptor0, []int{1, 0} }
+
 type RelayMessage struct {
-	Join     *JoinMessage            `protobuf:"bytes,10,opt,name=join" json:"join,omitempty"`
-	Leave    *LeaveMessage           `protobuf:"bytes,11,opt,name=leave" json:"leave,omitempty"`
-	Incoming *ChannelIncomingMessage `protobuf:"bytes,12,opt,name=incoming" json:"incoming,omitempty"`
-	Outgoing *ChannelOutgoingMessage `protobuf:"bytes,13,opt,name=outgoing" json:"outgoing,omitempty"`
+	Channel      string            `protobuf:"bytes,1,opt,name=channel" json:"channel,omitempty"`
+	Type         RelayMessage_TYPE `protobuf:"varint,2,opt,name=type,enum=RelayMessage_TYPE" json:"type,omitempty"`
+	JoinResponse *JoinResponse     `protobuf:"bytes,3,opt,name=joinResponse" json:"joinResponse,omitempty"`
+	Ingress      *Ingress          `protobuf:"bytes,4,opt,name=ingress" json:"ingress,omitempty"`
+	Egress       *Egress           `protobuf:"bytes,5,opt,name=egress" json:"egress,omitempty"`
 }
 
 func (m *RelayMessage) Reset()                    { *m = RelayMessage{} }
@@ -44,116 +95,99 @@ func (m *RelayMessage) String() string            { return proto.CompactTextStri
 func (*RelayMessage) ProtoMessage()               {}
 func (*RelayMessage) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
 
-func (m *RelayMessage) GetJoin() *JoinMessage {
-	if m != nil {
-		return m.Join
-	}
-	return nil
-}
-
-func (m *RelayMessage) GetLeave() *LeaveMessage {
-	if m != nil {
-		return m.Leave
-	}
-	return nil
-}
-
-func (m *RelayMessage) GetIncoming() *ChannelIncomingMessage {
-	if m != nil {
-		return m.Incoming
-	}
-	return nil
-}
-
-func (m *RelayMessage) GetOutgoing() *ChannelOutgoingMessage {
-	if m != nil {
-		return m.Outgoing
-	}
-	return nil
-}
-
-type JoinMessage struct {
-	Channel string `protobuf:"bytes,1,opt,name=channel" json:"channel,omitempty"`
-}
-
-func (m *JoinMessage) Reset()                    { *m = JoinMessage{} }
-func (m *JoinMessage) String() string            { return proto.CompactTextString(m) }
-func (*JoinMessage) ProtoMessage()               {}
-func (*JoinMessage) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
-
-func (m *JoinMessage) GetChannel() string {
+func (m *RelayMessage) GetChannel() string {
 	if m != nil {
 		return m.Channel
 	}
 	return ""
 }
 
-type LeaveMessage struct {
-	Channel string `protobuf:"bytes,1,opt,name=channel" json:"channel,omitempty"`
+func (m *RelayMessage) GetType() RelayMessage_TYPE {
+	if m != nil {
+		return m.Type
+	}
+	return RelayMessage_JOIN
 }
 
-func (m *LeaveMessage) Reset()                    { *m = LeaveMessage{} }
-func (m *LeaveMessage) String() string            { return proto.CompactTextString(m) }
-func (*LeaveMessage) ProtoMessage()               {}
-func (*LeaveMessage) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
-
-func (m *LeaveMessage) GetChannel() string {
+func (m *RelayMessage) GetJoinResponse() *JoinResponse {
 	if m != nil {
-		return m.Channel
+		return m.JoinResponse
+	}
+	return nil
+}
+
+func (m *RelayMessage) GetIngress() *Ingress {
+	if m != nil {
+		return m.Ingress
+	}
+	return nil
+}
+
+func (m *RelayMessage) GetEgress() *Egress {
+	if m != nil {
+		return m.Egress
+	}
+	return nil
+}
+
+type JoinResponse struct {
+	Status JoinResponse_STATUS `protobuf:"varint,1,opt,name=status,enum=JoinResponse_STATUS" json:"status,omitempty"`
+	Reason string              `protobuf:"bytes,2,opt,name=reason" json:"reason,omitempty"`
+}
+
+func (m *JoinResponse) Reset()                    { *m = JoinResponse{} }
+func (m *JoinResponse) String() string            { return proto.CompactTextString(m) }
+func (*JoinResponse) ProtoMessage()               {}
+func (*JoinResponse) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+
+func (m *JoinResponse) GetStatus() JoinResponse_STATUS {
+	if m != nil {
+		return m.Status
+	}
+	return JoinResponse_OK
+}
+
+func (m *JoinResponse) GetReason() string {
+	if m != nil {
+		return m.Reason
 	}
 	return ""
 }
 
-type ChannelIncomingMessage struct {
-	Channel string `protobuf:"bytes,1,opt,name=channel" json:"channel,omitempty"`
-	Blob    []byte `protobuf:"bytes,2,opt,name=blob,proto3" json:"blob,omitempty"`
+type Ingress struct {
+	Blob []byte `protobuf:"bytes,1,opt,name=blob,proto3" json:"blob,omitempty"`
 }
 
-func (m *ChannelIncomingMessage) Reset()                    { *m = ChannelIncomingMessage{} }
-func (m *ChannelIncomingMessage) String() string            { return proto.CompactTextString(m) }
-func (*ChannelIncomingMessage) ProtoMessage()               {}
-func (*ChannelIncomingMessage) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
+func (m *Ingress) Reset()                    { *m = Ingress{} }
+func (m *Ingress) String() string            { return proto.CompactTextString(m) }
+func (*Ingress) ProtoMessage()               {}
+func (*Ingress) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
 
-func (m *ChannelIncomingMessage) GetChannel() string {
-	if m != nil {
-		return m.Channel
-	}
-	return ""
-}
-
-func (m *ChannelIncomingMessage) GetBlob() []byte {
+func (m *Ingress) GetBlob() []byte {
 	if m != nil {
 		return m.Blob
 	}
 	return nil
 }
 
-type ChannelOutgoingMessage struct {
-	Channel string `protobuf:"bytes,1,opt,name=channel" json:"channel,omitempty"`
-	Address string `protobuf:"bytes,2,opt,name=address" json:"address,omitempty"`
-	Blob    []byte `protobuf:"bytes,3,opt,name=blob,proto3" json:"blob,omitempty"`
+type Egress struct {
+	Address string `protobuf:"bytes,1,opt,name=address" json:"address,omitempty"`
+	Blob    []byte `protobuf:"bytes,2,opt,name=blob,proto3" json:"blob,omitempty"`
 }
 
-func (m *ChannelOutgoingMessage) Reset()                    { *m = ChannelOutgoingMessage{} }
-func (m *ChannelOutgoingMessage) String() string            { return proto.CompactTextString(m) }
-func (*ChannelOutgoingMessage) ProtoMessage()               {}
-func (*ChannelOutgoingMessage) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{4} }
+func (m *Egress) Reset()                    { *m = Egress{} }
+func (m *Egress) String() string            { return proto.CompactTextString(m) }
+func (*Egress) ProtoMessage()               {}
+func (*Egress) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
 
-func (m *ChannelOutgoingMessage) GetChannel() string {
-	if m != nil {
-		return m.Channel
-	}
-	return ""
-}
-
-func (m *ChannelOutgoingMessage) GetAddress() string {
+func (m *Egress) GetAddress() string {
 	if m != nil {
 		return m.Address
 	}
 	return ""
 }
 
-func (m *ChannelOutgoingMessage) GetBlob() []byte {
+func (m *Egress) GetBlob() []byte {
 	if m != nil {
 		return m.Blob
 	}
@@ -162,29 +196,36 @@ func (m *ChannelOutgoingMessage) GetBlob() []byte {
 
 func init() {
 	proto.RegisterType((*RelayMessage)(nil), "RelayMessage")
-	proto.RegisterType((*JoinMessage)(nil), "JoinMessage")
-	proto.RegisterType((*LeaveMessage)(nil), "LeaveMessage")
-	proto.RegisterType((*ChannelIncomingMessage)(nil), "ChannelIncomingMessage")
-	proto.RegisterType((*ChannelOutgoingMessage)(nil), "ChannelOutgoingMessage")
+	proto.RegisterType((*JoinResponse)(nil), "JoinResponse")
+	proto.RegisterType((*Ingress)(nil), "Ingress")
+	proto.RegisterType((*Egress)(nil), "Egress")
+	proto.RegisterEnum("RelayMessage_TYPE", RelayMessage_TYPE_name, RelayMessage_TYPE_value)
+	proto.RegisterEnum("JoinResponse_STATUS", JoinResponse_STATUS_name, JoinResponse_STATUS_value)
 }
 
 func init() { proto.RegisterFile("relay.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 239 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x7c, 0x91, 0xc1, 0x4e, 0x03, 0x21,
-	0x10, 0x86, 0x83, 0x56, 0x6b, 0x67, 0xe9, 0x85, 0x83, 0x72, 0xdc, 0xe0, 0x41, 0x4e, 0x1c, 0xec,
-	0x23, 0x98, 0x98, 0x68, 0x34, 0x26, 0x3c, 0x81, 0x6c, 0x4b, 0x56, 0x0c, 0x32, 0x66, 0xa9, 0x26,
-	0x3e, 0x9d, 0xaf, 0x66, 0xa0, 0x0b, 0x56, 0xa3, 0x7b, 0xe3, 0x9f, 0xf9, 0xbf, 0x7f, 0xfe, 0x04,
-	0x68, 0x06, 0xeb, 0xcd, 0x87, 0x7a, 0x1d, 0x70, 0x8b, 0xe2, 0x93, 0x00, 0xd5, 0x49, 0xdf, 0xdb,
-	0x18, 0x4d, 0x6f, 0x59, 0x0b, 0xb3, 0x67, 0x74, 0x81, 0x43, 0x4b, 0x64, 0x73, 0x49, 0xd5, 0x2d,
-	0xba, 0x30, 0xee, 0x74, 0xde, 0xb0, 0x73, 0x38, 0xf2, 0xd6, 0xbc, 0x5b, 0xde, 0x64, 0xcb, 0x52,
-	0xdd, 0x25, 0x55, 0x3c, 0xbb, 0x1d, 0x5b, 0xc1, 0x89, 0x0b, 0x6b, 0x7c, 0x71, 0xa1, 0xe7, 0x34,
-	0xfb, 0xce, 0xd4, 0xd5, 0x93, 0x09, 0xc1, 0xfa, 0x9b, 0x71, 0x5e, 0x88, 0x6a, 0x4c, 0x10, 0xbe,
-	0x6d, 0x7b, 0x4c, 0xd0, 0xf2, 0x27, 0xf4, 0x30, 0xce, 0x2b, 0x54, 0x8c, 0xe2, 0x02, 0x9a, 0xbd,
-	0x8e, 0x8c, 0xc3, 0x7c, 0xbd, 0x43, 0x38, 0x69, 0x89, 0x5c, 0xe8, 0x22, 0x85, 0x04, 0xba, 0xdf,
-	0x74, 0xc2, 0x79, 0x0d, 0xa7, 0x7f, 0x77, 0xfd, 0x9f, 0x61, 0x0c, 0x66, 0x9d, 0xc7, 0x8e, 0x1f,
-	0xb4, 0x44, 0x52, 0x9d, 0xdf, 0xe2, 0xb1, 0xe6, 0xfc, 0xaa, 0x3f, 0x91, 0xc3, 0x61, 0x6e, 0x36,
-	0x9b, 0xc1, 0xc6, 0x98, 0xa3, 0x16, 0xba, 0xc8, 0x7a, 0xe1, 0xf0, 0xfb, 0x42, 0x77, 0x9c, 0x7f,
-	0x71, 0xf5, 0x15, 0x00, 0x00, 0xff, 0xff, 0x48, 0x89, 0xdb, 0x85, 0xd4, 0x01, 0x00, 0x00,
+	// 335 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x54, 0x91, 0x41, 0x6b, 0xfa, 0x40,
+	0x10, 0xc5, 0x4d, 0x8c, 0x1b, 0x1d, 0xa3, 0xe4, 0x3f, 0xfc, 0x29, 0xb9, 0x48, 0x65, 0x0f, 0xc5,
+	0x43, 0x59, 0xa8, 0x85, 0xde, 0x3d, 0x6c, 0x25, 0xd6, 0xaa, 0x4c, 0xb4, 0xd0, 0x53, 0x89, 0x75,
+	0xb1, 0x16, 0x49, 0x24, 0x9b, 0x1e, 0xfc, 0x18, 0xfd, 0xc6, 0x25, 0x9b, 0xd8, 0xea, 0x6d, 0xde,
+	0xce, 0x6f, 0xd8, 0x99, 0xf7, 0xa0, 0x9d, 0xa9, 0x7d, 0x7c, 0x14, 0x87, 0x2c, 0xcd, 0x53, 0xfe,
+	0x6d, 0x83, 0x47, 0x85, 0x7e, 0x56, 0x5a, 0xc7, 0x5b, 0x85, 0x01, 0xb8, 0xef, 0x1f, 0x71, 0x92,
+	0xa8, 0x7d, 0x60, 0xf5, 0xad, 0x41, 0x8b, 0x4e, 0x12, 0x6f, 0xc0, 0xc9, 0x8f, 0x07, 0x15, 0xd8,
+	0x7d, 0x6b, 0xd0, 0x1d, 0xa2, 0x38, 0x1f, 0x13, 0xcb, 0xd7, 0x85, 0x24, 0xd3, 0xc7, 0x3b, 0xf0,
+	0x3e, 0xd3, 0x5d, 0x42, 0x4a, 0x1f, 0xd2, 0x44, 0xab, 0xa0, 0xde, 0xb7, 0x06, 0xed, 0x61, 0x47,
+	0x4c, 0xce, 0x1e, 0xe9, 0x02, 0x41, 0x0e, 0xee, 0x2e, 0xd9, 0x66, 0x4a, 0xeb, 0xc0, 0x31, 0x74,
+	0x53, 0x84, 0xa5, 0xa6, 0x53, 0x03, 0xaf, 0x81, 0xa9, 0x12, 0x69, 0x18, 0xc4, 0x15, 0xb2, 0x24,
+	0xaa, 0x67, 0x3e, 0x06, 0xa7, 0xd8, 0x02, 0x9b, 0xe0, 0x4c, 0xe6, 0xe1, 0xcc, 0xaf, 0xe1, 0x3f,
+	0xe8, 0x14, 0xd5, 0x1b, 0xc9, 0x68, 0x31, 0x9f, 0x45, 0xd2, 0xb7, 0xb0, 0x05, 0x8d, 0xa9, 0x1c,
+	0xbd, 0x48, 0xdf, 0xc6, 0x36, 0xb8, 0xe1, 0x6c, 0x4c, 0x32, 0x8a, 0xfc, 0x3a, 0x02, 0x30, 0x59,
+	0xd6, 0x0e, 0xd7, 0xe0, 0x9d, 0xef, 0x8a, 0xb7, 0xc0, 0x74, 0x1e, 0xe7, 0x5f, 0xda, 0x38, 0xd2,
+	0x1d, 0xfe, 0xbf, 0x38, 0x45, 0x44, 0xcb, 0xd1, 0x72, 0x15, 0x51, 0xc5, 0xe0, 0x15, 0xb0, 0x4c,
+	0xc5, 0x3a, 0x4d, 0x8c, 0x51, 0x2d, 0xaa, 0x14, 0xef, 0x01, 0x2b, 0x49, 0x64, 0x60, 0xcf, 0x9f,
+	0xfc, 0x5a, 0xb1, 0xc0, 0xe3, 0x28, 0x9c, 0xae, 0x48, 0xfa, 0x16, 0xef, 0x81, 0x5b, 0x9d, 0x8c,
+	0x08, 0xce, 0x7a, 0x9f, 0xae, 0xcd, 0x6f, 0x1e, 0x99, 0x9a, 0x3f, 0x00, 0x2b, 0xcf, 0x2d, 0x02,
+	0x8a, 0x37, 0x1b, 0x63, 0x44, 0x15, 0x50, 0x25, 0x7f, 0xe7, 0xec, 0xbf, 0xb9, 0x35, 0x33, 0x31,
+	0xdf, 0xff, 0x04, 0x00, 0x00, 0xff, 0xff, 0x68, 0xeb, 0xc6, 0x7c, 0xf5, 0x01, 0x00, 0x00,
 }
