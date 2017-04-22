@@ -3,159 +3,172 @@ package relay
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	net "github.com/nikkolasg/mulsigo/network"
 	"github.com/nikkolasg/mulsigo/slog"
 )
 
-type Signal interface {
-	// channel that receives messages that must be broadcasted as ingress
-	// message to the relay
-	Ingress() chan Ingress
-	// channel that receives message that have been received from the relay as
-	// Egress message,i.e. broadcasted messages.
-	Egress() chan Egress
-	Error() chan error
-	Id() string
+type Channel interface {
+	Send([]byte) error
+	Receive() (*Egress, error)
+	Close()
 }
 
+// Multiplexer handles different communication "channel" on one underlying
+// connection to a relay.
 type Multiplexer struct {
-	conn      net.Conn
-	newSignal chan Signal
-	delSignal chan Signal
+	conn net.Conn
+
+	channels map[string]*clientChannel
+	chanMut  sync.Mutex
+
+	stop chan bool
 }
 
 func NewMultiplexer(c net.Conn) *Multiplexer {
 	m := &Multiplexer{
-		conn:      c,
-		newSignal: make(chan Signal),
-		delSignal: make(chan Signal),
+		conn:     c,
+		stop:     make(chan bool),
+		channels: make(map[string]*clientChannel),
 	}
 	go m.routine()
 	return m
 }
 
-func (m *Multiplexer) AddSignal(s Signal) {
-	m.newSignal <- s
-}
+// Channel takes an id and returns the corresponding Channel. If the channel
+// does not exists, it creates it and join the channel on the relay. It returns
+// an error in case the "join" operation failed.
+func (m *Multiplexer) Channel(id string) (Channel, error) {
+	slog.Debugf("multiplexer: new channel %s joining...", id)
+	m.chanMut.Lock()
+	if s, ok := m.channels[id]; ok {
+		m.chanMut.Unlock()
+		return s, nil
+	}
+	slog.Debugf("multiplexer: new channel %s joining...", id)
+	ch := newClientChannel(id, m)
+	m.channels[id] = ch
+	m.chanMut.Unlock()
 
-func (m *Multiplexer) DelSignal(s Signal) {
-	m.delSignal <- s
+	err := ch.join()
+	slog.Debugf("multiplexer: new channel %s joined!", id)
+	if err != nil {
+		m.chanMut.Lock()
+		delete(m.channels, id)
+		m.chanMut.Unlock()
+		return nil, err
+	}
+	return ch, nil
 }
 
 var queueSize = 20
 
 func (m *Multiplexer) routine() {
-	stopReceive := make(chan bool)
-	signals := make(map[string]*signalInfo)
-	relayMsg := make(chan RelayMessage, queueSize)
-
-	go func() {
-		for {
-			nm, err := m.conn.Receive()
-			if err != nil {
-				slog.Info(err)
-				continue
-			}
-			rm, ok := nm.(*RelayMessage)
-			if !ok {
-				slog.Debug("received non relay message from ", m.conn.Remote())
-				continue
-			}
-
-			select {
-			case <-stopReceive:
-				return
-			case relayMsg <- *rm:
-			default:
-			}
-		}
-	}()
-
 	for {
 		select {
-		case s := <-m.newSignal:
-			info := newSignalInfo(s, m.conn)
-			signals[s.Id()] = info
-			go info.routine()
-		case s := <-m.delSignal:
-			info, ok := signals[s.Id()]
-			if !ok {
-				continue
-			}
-			close(info.stop)
-			delete(signals, s.Id())
-		case egress := <-relayMsg:
-			channel := egress.GetChannel()
-			info, ok := signals[channel]
-			if !ok {
-				slog.Debug("received message for non saved signal")
-				continue
-			}
-			info.egress <- egress
+		case <-m.stop:
+			return
+		default:
 		}
 
+		nm, err := m.conn.Receive()
+		if err != nil {
+			slog.Print("connection to relay closed. stop.")
+			return
+		}
+		rm, ok := nm.(*RelayMessage)
+		if !ok {
+			slog.Debug("multiplexer: received non relay message from ", m.conn.Remote())
+			continue
+		}
+		m.chanMut.Lock()
+		ch, ok := m.channels[rm.GetChannel()]
+		if !ok {
+			slog.Debug("multiplexer: received message for non saved signal: ", rm.Channel)
+			m.chanMut.Unlock()
+			continue
+		}
+		ch.dispatch(rm)
+		m.chanMut.Unlock()
 	}
 }
 
-// manage the messages for one channel
-type signalInfo struct {
-	id     string            // id of the channel
-	signal Signal            // the signal which to dispatch messages
-	conn   net.Conn          // the connection to directly send raw message to relay
-	egress chan RelayMessage // egress channel receiving messages from the multiplexer
-	stop   chan bool         // signal to stop the processing
+func (m *Multiplexer) send(rm *RelayMessage) error {
+	return m.conn.Send(rm)
 }
 
-func newSignalInfo(s Signal, conn net.Conn) *signalInfo {
-	return &signalInfo{
-		id:     s.Id(),
-		signal: s,
-		conn:   conn,
-		egress: make(chan RelayMessage, queueSize),
+func (m *Multiplexer) channelDone(id string) {
+	m.chanMut.Lock()
+	defer m.chanMut.Unlock()
+	delete(m.channels, id)
+}
+
+type clientChannel struct {
+	id     string
+	m      *Multiplexer
+	egress chan *RelayMessage
+	stop   chan bool
+}
+
+func newClientChannel(id string, m *Multiplexer) *clientChannel {
+	return &clientChannel{
+		id:     id,
+		m:      m,
+		egress: make(chan *RelayMessage, queueSize),
 		stop:   make(chan bool, 1),
 	}
 }
 
-func (s *signalInfo) routine() {
-	if err := s.join(); err != nil {
-		s.signal.Error() <- err
-	}
-
-	ingress := s.signal.Ingress()
-	for {
-		select {
-		case msg := <-ingress:
-			err := s.conn.Send(&RelayMessage{
-				Channel: s.signal.Id(),
-				Type:    RelayMessage_INGRESS,
-				Ingress: &msg,
-			})
-			if err != nil {
-				s.signal.Error() <- fmt.Errorf("signalInfo: %s", err.Error())
+func (c *clientChannel) Receive() (*Egress, error) {
+	select {
+	case rm := <-c.egress:
+		if rm.GetType() != RelayMessage_EGRESS {
+			if rm.GetEgress() != nil {
+				fmt.Println("BAD BAD BAD")
 			}
-		case msg := <-s.egress:
-			if msg.GetType() != RelayMessage_EGRESS {
-
-			}
-		case <-s.stop:
-			return
+			return nil, fmt.Errorf("channel %s: not egress receiving %d", c.id, rm.GetType())
 		}
+		eg := rm.GetEgress()
+		return eg, nil
+	case <-c.stop:
+		return nil, fmt.Errorf("channel %s: closed")
 	}
+}
+
+func (c *clientChannel) Close() {
+	if err := c.m.send(&RelayMessage{
+		Channel: c.id,
+		Type:    RelayMessage_LEAVE,
+	}); err != nil {
+		slog.Debugf("channel %s: %s", c.id, err)
+	}
+	close(c.stop)
+	c.m.channelDone(c.id)
+}
+
+func (c *clientChannel) Send(blob []byte) error {
+	return c.m.send(&RelayMessage{
+		Channel: c.id,
+		Type:    RelayMessage_INGRESS,
+		Ingress: &Ingress{blob},
+	})
 }
 
 var JoinTimeout = 1 * time.Minute
 
-func (s *signalInfo) join() error {
-	if err := s.conn.Send(&RelayMessage{
-		Channel: s.id,
+func (c *clientChannel) join() error {
+	if err := c.m.send(&RelayMessage{
+		Channel: c.id,
 		Type:    RelayMessage_JOIN,
 	}); err != nil {
+		slog.Debug("could not join: ", err)
 		return err
 	}
+
 	select {
-	case mt := <-s.egress:
+	case mt := <-c.egress:
 		if mt.GetType() != RelayMessage_JOIN_RESPONSE {
 			return errors.New("signal received unexpected message")
 		}
@@ -169,12 +182,7 @@ func (s *signalInfo) join() error {
 	}
 }
 
-func (s *signalInfo) leave() {
-	err := s.conn.Send(&RelayMessage{
-		Channel: s.id,
-		Type:    RelayMessage_LEAVE,
-	})
-	if err != nil {
-		slog.Print("signalInfo: " + err.Error())
-	}
+func (c *clientChannel) dispatch(rm *RelayMessage) {
+	slog.Debug("clientChannel: dispatching relay message...")
+	c.egress <- rm
 }

@@ -49,6 +49,17 @@ func (r *Relay) Process(from net.Address, msg net.Message) {
 		id := m.GetChannel()
 		ch, ok := r.channels[id]
 		if !ok {
+			if len(r.channels) > MaxChannel {
+				// too many channels
+				r.router.Send(from, &RelayMessage{
+					Type: RelayMessage_JOIN_RESPONSE,
+					JoinResponse: &JoinResponse{
+						Status: JoinResponse_FAILURE,
+						Reason: "too many channels",
+					},
+				})
+				return
+			}
 			// create a new one
 			ch = newChannel(r, id)
 			r.channels[id] = ch

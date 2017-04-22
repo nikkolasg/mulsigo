@@ -3,38 +3,42 @@ package relay
 import (
 	"github.com/dedis/onet/log"
 	net "github.com/nikkolasg/mulsigo/network"
+	"github.com/nikkolasg/mulsigo/slog"
 )
 
 // channel holds a list of all participants registered to a channel designated
 // by an ID. Each participant can broadcast message to a channel and receive
 // message from others on the same channel.
 type channel struct {
-	id       string               // id of the channel
-	relay    *Relay               // router to send messages
-	incoming chan messageInfo     // incoming message coming from the router
-	join     chan net.Address     // join message
-	leave    chan net.Address     // leave message
-	finished chan bool            // stop signal from the router
-	clients  map[net.Address]bool // list of clients. Not concurrent safe.
+	id                string           // id of the channel
+	relay             *Relay           // router to send messages
+	incoming          chan messageInfo // incoming message coming from the router
+	join              chan net.Address // join message
+	leave             chan net.Address // leave message
+	finished          chan bool        // stop signal from the router
+	finishedConfirmed chan bool
+	clients           map[net.Address]bool // list of clients. Not concurrent safe.
 }
 
 // newChannel returns a new channel identified by "id". It launches the
 // processing routine.
 func newChannel(r *Relay, id string) *channel {
 	ch := &channel{
-		id:       id,
-		incoming: make(chan messageInfo, ChannelQueueSize),
-		join:     make(chan net.Address, ChannelSize),
-		leave:    make(chan net.Address, ChannelSize),
-		finished: make(chan bool, 1),
-		relay:    r,
-		clients:  make(map[net.Address]bool),
+		id:                id,
+		incoming:          make(chan messageInfo, ChannelQueueSize),
+		join:              make(chan net.Address, ChannelQueueSize),
+		leave:             make(chan net.Address, ChannelQueueSize),
+		finished:          make(chan bool, 1),
+		finishedConfirmed: make(chan bool, 1),
+		relay:             r,
+		clients:           make(map[net.Address]bool),
 	}
 	go ch.process()
 	return ch
 }
 
 func (ch *channel) newMessage(from net.Address, incoming *RelayMessage) {
+	log.Print(ch.id, "receiving from", from.String(), ": ", incoming.GetType())
 	switch incoming.GetType() {
 	case RelayMessage_JOIN:
 		ch.join <- from
@@ -52,6 +56,8 @@ func (ch *channel) process() {
 	for {
 		select {
 		case <-ch.finished:
+			ch.finishedConfirmed <- true
+			log.Lvl2("channel", ch.id, "finished")
 			return
 		case addr := <-ch.join:
 			log.Lvl2("channel", ch.id, ": adding client", addr.String())
@@ -69,12 +75,13 @@ func (ch *channel) process() {
 			_, ok := clients[addr]
 			if !ok {
 				// unknown user
-				log.Lvl2("channel: msg from unregistered user")
+				log.Lvl2("channel: msg from unregistered user", addr)
 				continue
 			}
 
 			rm := &RelayMessage{
 				Channel: ch.id,
+				Type:    RelayMessage_EGRESS,
 				Egress: &Egress{
 					Address: addr.String(),
 					Blob:    ingress.GetBlob(),
@@ -97,21 +104,25 @@ func (ch *channel) process() {
 // addClient adds the client to the list of local clients if capacity is not
 // exceeded and replay with a JOIN_ACK message.
 func (ch *channel) addClient(client net.Address) {
+	jr := &JoinResponse{}
+
 	_, ok := ch.clients[client]
+
 	if ok {
-		// already registered user -> no op
-		return
-	}
-	if len(ch.clients) < ChannelSize {
+		log.Lvl2(ch.id, "already added client", client)
+		jr.Status = JoinResponse_OK
+	} else if len(ch.clients) < ChannelSize {
 		ch.clients[client] = true
-		return
+		jr.Status = JoinResponse_OK
+		log.Lvl2("adding client", client)
+	} else {
+		jr.Status = JoinResponse_FAILURE
+		jr.Reason = "channel: can't join a full channel"
+		log.Lvl2("refusing client", client)
 	}
-	jr := &JoinResponse{
-		Status: JoinResponse_FAILURE,
-		Reason: "channel: can't join a full channel",
-	}
-	log.Lvl2("adding client", client)
+
 	if err := ch.relay.router.Send(client, &RelayMessage{
+		Channel:      ch.id,
 		Type:         RelayMessage_JOIN_RESPONSE,
 		JoinResponse: jr,
 	}); err != nil {
@@ -121,7 +132,11 @@ func (ch *channel) addClient(client net.Address) {
 
 // stop makes the channel stop for processing messages.
 func (ch *channel) stop() {
+	slog.Debugf("channel %s: calling Stop() #1", ch.id)
 	close(ch.finished)
+	slog.Debugf("channel %s: calling Stop() #2", ch.id)
+	<-ch.finishedConfirmed
+	slog.Debugf("channel %s: calling Stop() #3", ch.id)
 }
 
 // messageInfo is a simple wrapper to wrap the sender of a message to the

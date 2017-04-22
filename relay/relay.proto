@@ -9,8 +9,8 @@ message RelayMessage {
         JOIN = 0;
         JOIN_RESPONSE = 1;
         LEAVE = 2;
-        INGRESS = 3; // from relay's point of view,i.e to-be-broadcasted message
-        EGRESS = 4; // from relay's point of view,i.e. broadcasted message
+        INGRESS = 3; // incoming from relay's point of view
+        EGRESS = 4; // outgoing from relay's point of view,i.e. broadcasted message
     }
     TYPE type = 2;
 
