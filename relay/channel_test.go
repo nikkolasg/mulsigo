@@ -167,6 +167,56 @@ func TestChannelProcess(t *testing.T) {
 
 }
 
+func TestChannelConnectionDown(t *testing.T) {
+	router, err := net.NewLocalRouter(rAddr, enc)
+	require.Nil(t, err)
+
+	r := NewRelay(router)
+	go r.Start()
+	defer r.Stop()
+
+	cl1, err := net.NewLocalConn(cAddr1, rAddr)
+	require.Nil(t, err)
+	cl2, err := net.NewLocalConn(cAddr2, rAddr)
+	require.Nil(t, err)
+
+	addClient := func(c net.Conn) bool {
+		require.Nil(t, c.Send(&RelayMessage{
+			Channel: chanId1,
+			Type:    RelayMessage_JOIN,
+		}))
+		m, err := c.Receive()
+		require.Nil(t, err)
+		rm, ok := m.(*RelayMessage)
+		require.True(t, ok)
+		require.Equal(t, RelayMessage_JOIN_RESPONSE, rm.GetType())
+		return JoinResponse_OK == rm.JoinResponse.Status
+	}
+
+	send := func(c1 net.Conn) {
+		require.Nil(t, c1.Send(&RelayMessage{
+			Channel: chanId1,
+			Type:    RelayMessage_INGRESS,
+			Ingress: &Ingress{
+				Blob: []byte("hello world"),
+			},
+		}))
+	}
+
+	require.True(t, addClient(cl1))
+	require.True(t, addClient(cl2))
+	send(cl1)
+	_, err = cl2.Receive()
+	require.Nil(t, err)
+	require.Nil(t, cl2.Close())
+	// make sure the router drops the connection
+	require.Error(t, router.Send(cl2.Local(), &RelayMessage{}))
+	send(cl1)
+	r.channelsMut.Lock()
+	require.Len(t, r.channels[chanId1].clients, 1)
+	r.channelsMut.Unlock()
+}
+
 func waitNClients(ch *channel, n int) error {
 	for i := 0; i < 10; i++ {
 

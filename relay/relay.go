@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/dedis/onet/log"
+	"github.com/nikkolasg/mulsigo/event"
 	net "github.com/nikkolasg/mulsigo/network"
 )
 
@@ -34,6 +35,7 @@ func NewRelay(r *net.Router) *Relay {
 		channels: make(map[string]*channel),
 	}
 	r.RegisterProcessor(relay, RelayMessage{})
+	r.Register(net.EventConnDown, relay)
 	return relay
 }
 
@@ -86,4 +88,16 @@ func (r *Relay) deleteChannel(id string) {
 	r.channelsMut.Lock()
 	defer r.channelsMut.Unlock()
 	delete(r.channels, id)
+}
+
+func (r *Relay) Receive(e event.Event) {
+	if e.Name() != net.EventConnDown {
+		return
+	}
+	down := e.(*net.EventDown)
+	r.channelsMut.Lock()
+	defer r.channelsMut.Unlock()
+	for id, ch := range r.channels {
+		ch.newMessage(down.Address, &RelayMessage{Channel: id, Type: RelayMessage_LEAVE})
+	}
 }
