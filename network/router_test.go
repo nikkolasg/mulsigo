@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dedis/onet/log"
+	"github.com/nikkolasg/mulsigo/event"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -368,6 +369,56 @@ func TestRouterRxTx(t *testing.T) {
 	assert.Equal(t, 1, len(router1.connections))
 	router2.Stop()
 	router1.Stop()
+}
+
+type EventReceiver struct {
+	ch chan event.Event
+}
+
+func (e *EventReceiver) Receive(ev event.Event) {
+	e.ch <- ev
+}
+
+func TestRouterPublish(t *testing.T) {
+	log.TestOutput(true, 2)
+	r1, err := NewTestRouterLocal(2000)
+	require.Nil(t, err)
+	go r1.Start()
+	defer r1.Stop()
+
+	r2, err := NewTestRouterLocal(2001)
+	require.Nil(t, err)
+	go r2.Start()
+
+	rec := &EventReceiver{make(chan event.Event)}
+	r1.Register(EventConnUp, rec)
+
+	require.Nil(t, r2.Send(r1.address, &SimpleMessage{}))
+
+	addr := r2.connections[r1.address].Local()
+	select {
+	case e := <-rec.ch:
+		require.Equal(t, EventConnUp, e.Name())
+		up, ok := e.(*EventUp)
+		require.True(t, ok)
+		require.Equal(t, addr, up.Address)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("too long")
+	}
+
+	r1.Register(EventConnDown, rec)
+	require.Nil(t, r2.Stop())
+	require.Error(t, r1.Send(r2.address, &SimpleMessage{}))
+	select {
+	case e := <-rec.ch:
+		require.Equal(t, EventConnDown, e.Name())
+		down, ok := e.(*EventDown)
+		require.True(t, ok)
+		require.Equal(t, addr, down.Address)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("too long")
+	}
+
 }
 
 func waitTimeout(timeout time.Duration, repeat int,

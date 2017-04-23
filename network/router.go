@@ -53,6 +53,7 @@ func NewRouter(h Host) *Router {
 		connections: make(map[Address]Conn),
 		host:        h,
 		Dispatcher:  NewBlockingDispatcher(),
+		Publisher:   event.NewSimpleDispatcher(),
 	}
 	r.address = h.Address()
 	return r
@@ -177,10 +178,12 @@ func (r *Router) handleConn(c Conn) {
 		if err := c.Close(); err != nil {
 			log.Lvlf5("router %s: error closing conn to %s: %s", r.address, addr, err)
 		}
+		log.LLvlf5("router %s: closing conn to %s", r.address, addr)
 		r.traffic.updateRx(c.Rx())
 		r.traffic.updateTx(c.Tx())
 		r.wg.Done()
 		r.removeConnection(c)
+		r.Publish(&EventDown{c.Remote()})
 	}()
 	log.Lvlf3("router %s: handling new connection to %s", r.address, addr)
 	for {
@@ -236,6 +239,7 @@ func (r *Router) registerConnection(c Conn) error {
 		return nil
 	}
 	r.connections[c.Remote()] = c
+	r.Publish(&EventUp{c.Remote(), c})
 	return nil
 }
 
@@ -289,4 +293,24 @@ func (r *Router) Rx() uint64 {
 // Listening returns true if this router is started.
 func (r *Router) Listening() bool {
 	return r.host.Listening()
+}
+
+const EventConnUp = "EventConnUp"
+const EventConnDown = "EventConnDown"
+
+type EventUp struct {
+	Address Address
+	Conn    Conn
+}
+
+func (e *EventUp) Name() string {
+	return EventConnUp
+}
+
+type EventDown struct {
+	Address Address
+}
+
+func (e *EventDown) Name() string {
+	return EventConnDown
 }
