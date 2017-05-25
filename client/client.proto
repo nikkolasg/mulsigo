@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+message NoiseMessage {
+    bytes cipher = 1;
+}
+
+message ClientMessage {
+
+}
+
+// object to sign - abstract type, verified by its hash
+message ObjectToSign {
+  
+    oneof obj {
+
+        RemoteFile remote = 1;
+        
+        LocalFile local = 2;
+
+        Text text = 3;
+    }
+
+}
+
+message LocalFile {
+    string name  = 1;
+    bytes content = 2;
+}
+
+// whatever file that can be grabbed from an URL. 
+// type of protocol depends on the application: http, ftp, etc
+message RemoteFile {
+    string URL = 1;
+    // hash function to use
+    string hashFunc = 2;
+    // hash of the content of the object
+    bytes hash = 3;
+}
+
+// ascii formatted string
+message Text {
+    string content = 1;
+}
