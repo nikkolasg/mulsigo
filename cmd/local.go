@@ -4,9 +4,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dedis/crypto/config"
-	"github.com/dedis/crypto/ed25519"
-	"github.com/dedis/crypto/sign"
 	"github.com/nikkolasg/mulsigo/client"
 	"github.com/nikkolasg/mulsigo/slog"
 	"github.com/nikkolasg/mulsigo/util"
@@ -19,8 +16,8 @@ var IdentityFile = "public.toml"
 // localCmd represents the local command
 var localCmd = &cobra.Command{
 	Use:   "local [name]",
-	Short: "local generates a local key pair",
-	Long:  "local generates a local key pair using the ed25519 curve. This key pair can be used to create a group.toml along other public keys. You can specify an optional name argument if you want a name to be associated with your key pair. If you don't specify a name,a random one will be assigned! In any case, the keypair is self signed.",
+	Short: "local generates a local pgp key pair",
+	Long:  "local generates a local key pgp key pair using gpg2. This key pair can be used to create a group.toml along other public keys. You can specify an optional name argument if you want a name to be associated with your key pair. If you don't specify a name,a random one will be assigned!",
 	Run: func(cmd *cobra.Command, args []string) {
 		var name string
 		if len(args) > 0 {
@@ -33,7 +30,7 @@ var localCmd = &cobra.Command{
 }
 
 func init() {
-	keygenCmd.AddCommand(localCmd)
+	newCmd.AddCommand(localCmd)
 
 	// Here you will define your flags and configuration settings.
 
@@ -57,24 +54,15 @@ func process(name string) string {
 func generateKey(name string) {
 	name = process(name)
 	slog.Debugf("generateKey: name %s", name)
-	suite := ed25519.NewAES128SHA256Ed25519(false)
-	kp := config.NewKeyPair(suite)
-	private := &client.Private{kp.Secret}
-	identity := &client.Identity{
-		Public: kp.Public,
-		Name:   name,
-	}
-	sig, err := sign.Schnorr(suite, kp.Secret, identity.Hash())
-	identity.Signature = sig
-	slog.Info("generated a new ed25519 key pair with name", name)
-	slog.ErrFatal(err)
+	private, identity := client.NewPrivateIdentity(name)
+	slog.Info("generated a new identity with name", name)
 
 	secConfig := rootConfig.Dir(IdentityFolder).Dir(name)
-	err = secConfig.Write(SecretFile, private)
+	err := secConfig.Write(SecretFile, private)
 	slog.ErrFatal(err)
-	slog.Infof("saved private key in %s", secConfig.RelPath(SecretFile))
+	slog.Infof("saved private keys in %s", secConfig.RelPath(SecretFile))
 	err = secConfig.Write(IdentityFile, identity)
 	slog.ErrFatal(err)
-	slog.Infof("saved public identity %s", secConfig.RelPath(IdentityFile))
-	slog.Printf("saved new key pair under name: %s. Bye.", name)
+	slog.Infof("saved public identity in %s", secConfig.RelPath(IdentityFile))
+	slog.Printf("New local identity %s saved at %s. Bye !", name, secConfig.Path())
 }

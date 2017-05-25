@@ -39,23 +39,27 @@ var listCmd = &cobra.Command{
 
 func init() {
 	RootCmd.AddCommand(listCmd)
-	listCmd.Flags().BoolP("local", "l", false, "list only local identities")
-	listCmd.Flags().BoolP("dist", "d", false, "list only registered distributed keys")
+	listCmd.Flags().Bool("local", false, "list only local identities")
+	listCmd.Flags().Bool("dist", false, "list only registered distributed keys")
 }
 
 func listLocalKeys() {
 	secConfig := rootConfig.Dir(IdentityFolder)
 	slog.Print("Local identities:")
-	for _, dir := range secConfig.ListDirs() {
+	fis, err := secConfig.ListDir()
+	slog.ErrFatal(err)
+
+	if len(fis) == 0 {
+		slog.Print("no local keys found!")
+		return
+	}
+
+	for _, dir := range fis {
 		c := secConfig.Dir(dir)
 		p := &client.Private{}
 		slog.ErrFatal(c.Read(SecretFile, p))
 		id := &client.Identity{}
 		slog.ErrFatal(c.Read(IdentityFile, id))
-		// simple stupid test to check if they're correlated
-		if !client.Suite.Point().Mul(nil, p.Key).Equal(id.Public) {
-			slog.Fatal("CORRUPTED key folder: " + dir)
-		}
 		fmt.Println(id.Repr() + "\n")
 	}
 }

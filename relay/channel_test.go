@@ -208,6 +208,7 @@ func TestChannelConnectionDown(t *testing.T) {
 	send(cl1)
 	_, err = cl2.Receive()
 	require.Nil(t, err)
+	// close the connection
 	require.Nil(t, cl2.Close())
 	// make sure the router drops the connection
 	require.Error(t, router.Send(cl2.Local(), &RelayMessage{}))

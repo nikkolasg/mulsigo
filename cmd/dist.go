@@ -32,7 +32,7 @@ var distCmd = &cobra.Command{
 }
 
 func init() {
-	keygenCmd.AddCommand(distCmd)
+	newCmd.AddCommand(distCmd)
 
 	// Here you will define your flags and configuration settings.
 

@@ -1,0 +1,28 @@
+1. Check how gpg stores private key
+    1. either stores the seed
+    2. either stores the hashed seed + bit twiddling
+
+    RESULT: gpg stores the seed. In order to get to abstract.Scalar, one needs
+    to do:
+        ```go
+            digest := sha512.Sum512(priv[:32])
+            digest[0] &= 248
+            digest[31] &= 127
+            digest[31] |= 64
+            scalar := suite.Scalar()
+            //err := scalar.UnmarshalBinary(digest[:])
+            scalar.SetBytes(digest[:32])
+        ```
+
+2. Depending on 1 or 2, derive a Curve25519 private key + public key and check
+conversion
+    Since 1.1 is used, agl/ed25519/extra_25519 does the job !
+
+3. Private local key storage: toml style, "seed" format for private, and
+regular edwards25519 public encoding
+
+4. Distributed Public key format: gpg style
+
+5. For each remote edwards25519 public key -> convert it to curve25519 when
+doing the Noise exchange.
+    

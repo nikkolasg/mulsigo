@@ -10,7 +10,8 @@ import (
 type LogLevel int
 
 const (
-	LevelPrint = iota
+	levelFatal = iota
+	LevelPrint
 	LevelInfo
 	LevelDebug
 )
@@ -21,7 +22,19 @@ var Output io.Writer
 
 func init() {
 	Output = os.Stdout
+	Level = LevelPrint
 }
+
+var (
+	/* PrintPrefix = "[+]"*/
+	//InfoPrefix  = "[i]"
+	//DebugPrefix = "DEBUG"
+	/*FatalPrefix = "FATAL"*/
+	PrintPrefix = ""
+	InfoPrefix  = ""
+	DebugPrefix = ""
+	FatalPrefix = ""
+)
 
 func p(lvl LogLevel, args ...interface{}) {
 	if lvl > Level {
@@ -30,11 +43,13 @@ func p(lvl LogLevel, args ...interface{}) {
 	var buff bytes.Buffer
 	switch lvl {
 	case LevelPrint:
-		buff.WriteString("[+] ")
+		buff.WriteString(PrintPrefix)
 	case LevelInfo:
-		buff.WriteString("[-] ")
+		buff.WriteString(InfoPrefix)
 	case LevelDebug:
-		buff.WriteString("[D] ")
+		buff.WriteString(DebugPrefix)
+	case levelFatal:
+		buff.WriteString(FatalPrefix)
 	default:
 		panic("wrong slog level")
 	}
@@ -46,7 +61,7 @@ func ErrFatal(err error) {
 	if err == nil {
 		return
 	}
-	p(LevelPrint, err.Error())
+	p(levelFatal, err.Error())
 	os.Exit(-1)
 }
 
@@ -54,22 +69,22 @@ func ErrFatalf(err error, str string, args ...interface{}) {
 	if err == nil {
 		return
 	}
-	p(LevelPrint, fmt.Sprintf(str))
+	p(levelFatal, fmt.Sprintf(str))
 	os.Exit(-1)
 }
 
 func Fatal(args ...interface{}) {
-	p(LevelPrint, args)
+	p(levelFatal, args...)
 	os.Exit(-1)
 }
 
 func Fatalf(str string, args ...interface{}) {
-	p(LevelPrint, fmt.Sprintf(str, args...))
+	p(levelFatal, fmt.Sprintf(str, args...))
 	os.Exit(-1)
 }
 
 func Print(args ...interface{}) {
-	p(LevelPrint, args)
+	p(LevelPrint, args...)
 }
 
 func Printf(str string, args ...interface{}) {
@@ -77,7 +92,7 @@ func Printf(str string, args ...interface{}) {
 }
 
 func Info(args ...interface{}) {
-	p(LevelInfo, args)
+	p(LevelInfo, args...)
 }
 
 func Infof(str string, args ...interface{}) {
@@ -85,7 +100,7 @@ func Infof(str string, args ...interface{}) {
 }
 
 func Debug(args ...interface{}) {
-	p(LevelDebug, args)
+	p(LevelDebug, args...)
 }
 
 func Debugf(str string, args ...interface{}) {

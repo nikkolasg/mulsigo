@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-func Fatal(txt string, formatter ...interface{}) {
+func fatal(txt string, formatter ...interface{}) {
 	fmt.Fprintf(os.Stderr, txt, formatter)
 	os.Exit(1)
 }
@@ -16,7 +16,7 @@ func Fatal(txt string, formatter ...interface{}) {
 // RandomBytes fills buff from the given reader or crypto.Rand(omness) if reader
 // == nil. If there is any problem or the read did not take len(buff) bytes,
 // it returns an error.
-func RandomBytes(reader io.Reader, buff []byte) error {
+func randomBytes(reader io.Reader, buff []byte) error {
 	if reader == nil {
 		return fillBuff(rand.Read, buff)
 	}
@@ -35,7 +35,7 @@ func fillBuff(fn func(b []byte) (int, error), buff []byte) error {
 
 // Reverse computes the reverse of src into dst. Both buffers can be the same
 // but must not be overlapping otherwise.
-func Reverse(src, dst []byte) error {
+func reverse(src, dst []byte) error {
 	if len(src) != len(dst) {
 		return errors.New("Reverse can't operate on two different size buffer")
 	}

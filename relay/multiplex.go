@@ -13,6 +13,7 @@ import (
 type Channel interface {
 	Send([]byte) error
 	Receive() (*Egress, error)
+	Id() string
 	Close()
 }
 
@@ -185,4 +186,8 @@ func (c *clientChannel) join() error {
 func (c *clientChannel) dispatch(rm *RelayMessage) {
 	slog.Debug("clientChannel: dispatching relay message...")
 	c.egress <- rm
+}
+
+func (c *clientChannel) Id() string {
+	return c.id
 }
