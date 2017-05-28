@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/agl/ed25519/extra25519"
+
 	kyber "gopkg.in/dedis/crypto.v0/abstract"
 
-	dedisEd25519 "gopkg.in/dedis/crypto.v0/ed25519"
 	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/openpgp/packet"
+	dedisEd25519 "gopkg.in/dedis/crypto.v0/ed25519"
 )
 
 type GpgKeyInfo struct {
@@ -94,4 +96,22 @@ func scalarFromSeed(priv ed25519.PrivateKey) kyber.Scalar {
 	//err := scalar.UnmarshalBinary(digest[:])
 	scalar.SetBytes(digest[:32])
 	return scalar
+}
+
+func ed25519PrivateToCurve25519(p *ed25519.PrivateKey) [32]byte {
+	var buff [64]byte
+	copy(buff[:], *p)
+	var curvePriv [32]byte
+
+	extra25519.PrivateKeyToCurve25519(&curvePriv, &buff)
+	return curvePriv
+}
+
+func ed25519PublicToCurve25519(p *ed25519.PublicKey) ([32]byte, bool) {
+	var buff [32]byte
+	copy(buff[:], *p)
+	var curvePub [32]byte
+
+	ret := extra25519.PublicKeyToCurve25519(&curvePub, &buff)
+	return curvePub, ret
 }

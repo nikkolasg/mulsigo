@@ -2,7 +2,7 @@ package client
 
 import "github.com/dedis/crypto/ed25519"
 
-var SigSuite = ed25519.NewAES128SHA256Ed25519(false)
+var Suite = ed25519.NewAES128SHA256Ed25519(false)
 
 // Client can performs all distributed operations such as:
 // - generating a random distributed secret (rds)

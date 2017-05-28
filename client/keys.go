@@ -2,61 +2,93 @@ package client
 
 import (
 	"bytes"
+	"crypto/sha512"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/dedis/crypto/random"
 	net "github.com/nikkolasg/mulsigo/network"
 	"github.com/nikkolasg/mulsigo/util"
 	"gopkg.in/dedis/crypto.v0/abstract"
+	"gopkg.in/dedis/crypto.v0/sign"
 )
 
 type Private struct {
-	Key abstract.Scalar
+	seed []byte
 }
 
-type Public struct {
-	Key abstract.Point
+func (p *Private) Scalar() abstract.Scalar {
+	h := sha512.New()
+	h.Write(p.seed[:32])
+	digest := h.Sum(nil)
+
+	digest[0] &= 248
+	digest[31] &= 127
+	digest[31] |= 64
+
+	s := suite.Scalar()
+	s.SetBytes(digest)
+	return s
 }
 
-func NewPrivateIdentity(name string) (*Private, *Identity) {
-	sig := SigSuite.NewKey(random.Stream)
-	priv := &Private{
-		Key: sig,
-	}
-	sigPub := SigSuite.Point().Mul(nil, sig)
-	id := &Identity{
-		Name: name,
-		Key:  sigPub,
-	}
-	return priv, id
+func (p *Private) Public() Public {
+	s := p.Scalar()
+	return Suite.Point().Mul(nil, s)
 }
 
-type privateToml struct {
-	Key string
-}
+type Public abstract.Point
 
-func (p *Private) Toml() interface{} {
-	sigStr, _ := util.ScalarToString64(p.Key)
-	return &privateToml{sigStr}
-}
-
-func (p *Private) FromToml(f string) error {
-	pt := &privateToml{}
-	_, err := toml.Decode(f, pt)
+func NewPrivateIdentity(name string, r io.Reader) (*Private, *Identity) {
+	// only need the first 32 bytes
+	var seed [32]byte
+	_, err := io.ReadFull(r, seed)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	p.Key, err = util.String64ToScalar(SigSuite, pt.Key)
-	return err
+	priv := &Private{seed}
+
+	id := &Identity{
+		Name:      name,
+		CreatedAt: time.Now().Unix(),
+		Key:       priv.Public(),
+	}
+
+	err := id.selfsign(priv, r)
+	return priv, id, err
 }
 
 type Identity struct {
-	Name string
-	Key  abstract.Point
+	Name      string
+	Key       Public
+	CreatedAt int64
+	Signature []byte
 	// reachable - usually empty if using a relay but if provided, will enable
 	// one to make direct connection between a pair of peers.
 	Address net.Address
+}
+
+// selfsign marshals the identity's name,creation time and public key and then
+// signs the resulting buffer. The signature can be accessed through the
+// Signature field of the Identity. It is a Schnorr signature that can be
+// verified using Ed25519 (first EdDSA versions) signature verification
+// routines.
+func (i *Identity) selfsign(p *Private, r io.Reader) error {
+	var buff bytes.Buffer
+	buff.WriteString(i.Name)
+	err := binary.Write(&buff, binary.LittleEndian, i.CreatedAt)
+	if err != nil {
+		return err
+	}
+	b, err := abstract.Point(i.Key).MarshalBinary()
+	if err != nil {
+		return err
+	}
+	buff.Write(b)
+	i.Signature, err = sign.Schnorr(Suite, p.Scalar(), buff.Bytes())
+	return err
 }
 
 func (i *Identity) Repr() string {
@@ -67,18 +99,42 @@ func (i *Identity) Repr() string {
 	return buff.String()
 }
 
+type privateToml struct {
+	Seed string
+}
+
+func (p *Private) Toml() interface{} {
+	seedStr, _ := util.ScalarToString64(p.seed)
+	return &privateToml{seedStr}
+}
+
+func (p *Private) FromToml(f string) error {
+	pt := &privateToml{}
+	_, err := toml.Decode(f, pt)
+	if err != nil {
+		return err
+	}
+	p.seed, err = util.String64ToScalar(Suite, pt.Seed)
+	return err
+}
+
 type identityToml struct {
-	Name    string
-	Key     string
-	Address string
+	Name      string
+	Key       string
+	CreatedAt int64
+	Signature string
+	Address   string
 }
 
 func (i *Identity) Toml() interface{} {
-	sigStr, _ := util.PointToString64(i.Key)
+	publicStr, _ := util.PointToStringHex(Suite, i.Key)
+	sigStr := hex.EncodeToString(i.Signature)
 	return &identityToml{
-		Key:     sigStr,
-		Name:    i.Name,
-		Address: i.Address.String(),
+		Key:       publicStr,
+		Signature: sigStr,
+		Name:      i.Name,
+		Address:   i.Address.String(),
+		CreatedAt: i.CreatedAt,
 	}
 }
 
@@ -88,16 +144,23 @@ func (i *Identity) FromToml(f string) error {
 	if err != nil {
 		return err
 	}
-	sigPub, err := util.String64ToPoint(SigSuite, it.Key)
+	public, err := util.StringHexToPoint(Suite, it.Key)
+	if err != nil {
+		return err
+	}
+	signature, err := hex.DecodeString(it.Signature)
 	if err != nil {
 		return err
 	}
 	i.Name = it.Name
-	i.Key = sigPub
+	i.Key = public
 	i.Address = net.Address(it.Address)
 	return nil
 }
 
+// GroupConfig is the public configuration of a group using mulsigo. It is
+// similar to a public pgp identity with a name, email and comment. It contains
+// the additional public information on all the participants of the group.
 type GroupConfig struct {
 	Name    string
 	Email   string

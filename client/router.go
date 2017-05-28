@@ -20,8 +20,6 @@ type Router interface {
 	Send(Identity, *ClientMessage) error
 	Receive() (Identity, *ClientMessage, error)
 	Broadcast(cm *ClientMessage, ids ...Identity) error
-	// push a message to the Router to be popped off with Receive()
-	push(string, *ClientMessage)
 }
 
 var cipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
@@ -70,7 +68,7 @@ func (blr *clientRouter) Send(remote *Identity, msg interface{}) error {
 		if err != nil {
 			return err
 		}
-		noiseWr := newNoiseWrapper(channel, remote, first)
+		noiseWr := newNoiseWrapper(channel, blr.id, remote)
 		blr.channels[id] = newStream(blr, channel, noiseWr)
 	}
 	channel.Send(msg)
@@ -88,40 +86,6 @@ const (
 	msg3
 	done
 )
-
-//         bytes             bytes           encoding/ interfaces
-// network <-> relay.Channel <-> noiseWrapper <->  stream
-// wrapper is the intermediate between the higher level interface{} stream and
-// the low level bytes relay.Channel. It can be used to add an encryption level,
-// padding etc...
-type wrapper interface {
-	wrap([]byte) error
-	unwrap() (string, []byte, error)
-}
-
-// noiseWrapper applies the Noise framework to the stream.
-type noiseWrapper struct {
-	remote        *Identity
-	handshake     *noise.HandshakeState
-	handshakeStep int
-	channel       relay.Channel
-}
-
-func newNoiseWrapper(ch relay.Channel, own, remote *Identity, init bool) *noiseWrapper {
-	pub, _ := own.Key.MarshalBinary()
-	hs := noise.NewHandshakeState(noise.Config{
-		CipherSuite:   cipherSuite,
-		Pattern:       noise.HandshakeKK,
-		Initiator:     init,
-		StaticKeypair: pub,
-	})
-
-	return noiseWrapper{
-		remote:    remote,
-		handshake: hs,
-		channel:   ch,
-	}
-}
 
 func (nw *noiseWrapper) wrap(buff []byte) error {
 	if nw.handshakeStep != done {
@@ -147,10 +111,12 @@ type naclWrapper struct {
 var enc = network.NewSingleProtoEncoder(ClientMessage{})
 
 type stream struct {
-	channelID string
-	remote    *Identity
-	w         wrapper
-	r         Router
+	channelID     string
+	remote        *Identity
+	r             Router
+	handshake     *noise.HandshakeState
+	handshakeStep int
+	channel       relay.Channel
 }
 
 func newStream(r Router, ch relay.Channel, wr wrapper) *stream {
@@ -158,8 +124,14 @@ func newStream(r Router, ch relay.Channel, wr wrapper) *stream {
 		channelID: id.Id(),
 		remote:    remote,
 		r:         r,
-		w:         wr,
+		hs: noise.NewHandshakeState(noise.Config{
+			CipherSuite:   cipherSuite,
+			Pattern:       noise.HandshakeKK,
+			Initiator:     init,
+			StaticKeypair: pub,
+		}),
 	}
+
 	go str.listen()
 	return str
 }
