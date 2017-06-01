@@ -9,7 +9,7 @@ import (
 
 	"strings"
 
-	"github.com/dedis/crypto/abstract"
+	"gopkg.in/dedis/crypto.v0/abstract"
 )
 
 // Read64Point reads a point from a base64 representation

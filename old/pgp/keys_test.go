@@ -199,6 +199,7 @@ func TestNoisePreSharedKey(t *testing.T) {
 		PeerStatic:    kp1.Public,
 	})
 
+	// -> e,es,ss  msg
 	msg, enc, dec := hsI.WriteMessage(nil, nil)
 	require.Nil(t, enc)
 	require.Nil(t, dec)
@@ -209,15 +210,29 @@ func TestNoisePreSharedKey(t *testing.T) {
 	//c.Assert(err, IsNil)
 	//c.Assert(string(res), Equals, "abc")
 
+	// <- e, ee , se
 	var msgNoise = []byte("abc")
-	msg, enc, dec = hsR.WriteMessage(nil, msgNoise)
-	require.NotNil(t, enc)
-	require.NotNil(t, dec)
-	res, enc, dec, err = hsI.ReadMessage(nil, msg)
+	msg, cR0, cR1 := hsR.WriteMessage(nil, msgNoise)
+	require.NotNil(t, cR0)
+	require.NotNil(t, cR1)
+	res, cI0, cI1, err := hsI.ReadMessage(nil, msg)
 	require.Nil(t, err)
 	require.NotEmpty(t, res)
 	require.Equal(t, res, msgNoise)
-	require.NotNil(t, enc)
-	require.NotNil(t, dec)
+	require.NotNil(t, cI0)
+	require.NotNil(t, cI1)
+
+	var clearMsg = []byte("Hello world")
+	ciphertext := cI0.Encrypt(nil, nil, clearMsg)
+
+	plain, err := cR0.Decrypt(nil, nil, ciphertext)
+	require.Nil(t, err)
+	require.Equal(t, clearMsg, plain)
+
+	ciphertext = cR1.Encrypt(nil, nil, clearMsg)
+
+	plain, err = cI1.Decrypt(nil, nil, ciphertext)
+	require.Nil(t, err)
+	require.Equal(t, clearMsg, plain)
 
 }

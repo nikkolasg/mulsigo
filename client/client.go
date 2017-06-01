@@ -1,6 +1,6 @@
 package client
 
-import "github.com/dedis/crypto/ed25519"
+import "gopkg.in/dedis/crypto.v0/ed25519"
 
 var Suite = ed25519.NewAES128SHA256Ed25519(false)
 

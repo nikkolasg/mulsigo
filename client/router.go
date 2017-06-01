@@ -2,14 +2,13 @@ package client
 
 import (
 	"crypto/sha256"
+	"errors"
 	"strings"
 	"sync"
 
 	"github.com/flynn/noise"
 	"github.com/nikkolasg/mulsigo/network"
 	"github.com/nikkolasg/mulsigo/relay"
-	"github.com/nikkolasg/mulsigo/slog"
-	"github.com/nikkolasg/mulsigo/util"
 )
 
 // Router is an interface whose main purpose is to provide a generic mean to
@@ -22,21 +21,18 @@ type Router interface {
 	Broadcast(cm *ClientMessage, ids ...Identity) error
 }
 
-var cipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
-
 // BiLinkRouter establish a relay channel for each destination address
 // It implements the client.Router interface.
 type clientRouter struct {
+	// the private key material
+	priv *Private
 	// the identity advertised by this router
-	id Identity
+	id *Identity
 	// multiplexer used to derive the channels
 	multiplexer *relay.Multiplexer
-	// list of open channels maintained by the router
-	channels    map[string]*channel
-	channelsMut sync.Mutex
-
-	// incoming messages waiting to be read by Receive()
-	incoming chan message
+	// list of open streams maintained by the router
+	streams    map[string]*noiseStream
+	streamsMut sync.Mutex
 
 	doneMut sync.Mutex
 	done    bool
@@ -44,35 +40,37 @@ type clientRouter struct {
 
 // NewRelayRouter returns a router that communicates with a relay in a
 // transparent way to the given address.
-func NewClientRouter(own Identity, m *relay.Multiplexer) Router {
-	blr := &clientRouter{
-		id:          own,
-		multiplexer: m,
-		channels:    make(map[string]*relay.Channel),
-		incoming:    make(chan message, 50),
-	}
-	return blr
-}
+/*func NewClientRouter(priv *Private, pub *Identity, m *relay.Multiplexer) Router {*/
+//blr := &clientRouter{
+//priv:        priv,
+//id:          pub,
+//multiplexer: m,
+//streams:     make(map[string]*noiseStream),
+//}
+//return blr
+//}
 
-func (blr *clientRouter) Send(remote *Identity, msg interface{}) error {
-	blr.Lock()
-	defer blr.Unlock()
-	id, first, err := channelID(blr.id, remote)
-	if err != nil {
-		return err
-	}
+//func (blr *clientRouter) Send(remote *Identity, msg interface{}) error {
+//blr.Lock()
+//defer blr.Unlock()
+//id, first, err := channelID(blr.id, remote)
+//if err != nil {
+//return err
+//}
 
-	channel, ok := blr.channels[id]
-	if !ok {
-		channel, err = blr.multiplexer.Channel(id)
-		if err != nil {
-			return err
-		}
-		noiseWr := newNoiseWrapper(channel, blr.id, remote)
-		blr.channels[id] = newStream(blr, channel, noiseWr)
-	}
-	channel.Send(msg)
-}
+//stream, ok := blr.streams[remote.ID()]
+//if !ok {
+//channel, err = blr.multiplexer.Channel(id)
+//if err != nil {
+//return err
+//}
+//stream = newStream(blr.priv, blr.id, remote, channel)
+//blr.streams[id] = stream
+//}
+//channel.Send(msg)
+//}
+
+//func (blr *clientRouter) Broadcast(m
 
 const (
 	// Noise_KK(s, rs):
@@ -81,106 +79,164 @@ const (
 	// -> e, es, ss  msg3
 	// <- e, ee, se  done
 	none = iota
-	msg1
-	msg2
-	msg3
+	hello
 	done
 )
 
-func (nw *noiseWrapper) wrap(buff []byte) error {
-	if nw.handshakeStep != done {
-		return nw.doHandshake()
-	}
-}
-
-func (nw *noiseWrapper) unwrap() (string, []byte, error) {
-
-}
-
-func (nw *noiseWrapper) doHandshake() {
-	switch nw.handshakeStep {
-	case none:
-		hello, _, _ := nw.handshake.WriteMessage(nil, nil)
-		return nw.channel.Send(hello)
-	}
-}
-
-type naclWrapper struct {
-}
-
 var enc = network.NewSingleProtoEncoder(ClientMessage{})
 
-type stream struct {
+//var cipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
+var cipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherAESGCM, noise.HashSHA256)
+
+type noiseStream struct {
 	channelID     string
 	remote        *Identity
-	r             Router
 	handshake     *noise.HandshakeState
-	handshakeStep int
+	handshakeDone bool
+	first         bool
 	channel       relay.Channel
+	encrypt       *noise.CipherState
+	decrypt       *noise.CipherState
 }
 
-func newStream(r Router, ch relay.Channel, wr wrapper) *stream {
-	str := &stream{
-		channelID: id.Id(),
+func newNoiseStream(priv *Private, pub, remote *Identity, ch relay.Channel) *noiseStream {
+	str := &noiseStream{
+		channelID: ch.Id(),
 		remote:    remote,
-		r:         r,
-		hs: noise.NewHandshakeState(noise.Config{
-			CipherSuite:   cipherSuite,
-			Pattern:       noise.HandshakeKK,
-			Initiator:     init,
-			StaticKeypair: pub,
-		}),
+		channel:   ch,
+	}
+	_, str.first = channelID(pub, remote)
+
+	// convert ed25519 private / public keys to curve25519
+	privCurve := priv.PrivateCurve25519()
+	pubCurve := pub.PublicCurve25519()
+	remotePublic := remote.PublicCurve25519()
+	kp1 := noise.DHKey{
+		Private: privCurve[:],
+		Public:  pubCurve[:],
 	}
 
-	go str.listen()
+	str.handshake = noise.NewHandshakeState(noise.Config{
+		CipherSuite:   cipherSuite,
+		Pattern:       noise.HandshakeKK,
+		Initiator:     str.first,
+		StaticKeypair: kp1,
+		PeerStatic:    remotePublic[:],
+	})
+
 	return str
 }
 
-func (str *stream) send(remote *Identity, msg *ClientMessage) error {
-	buff, err := enc.Marshal(msg)
+func (n *noiseStream) doHandshake() error {
+	if n.handshakeDone {
+		return errors.New("noise handshake already in process")
+	}
+
+	// terminology of TLS implementations:
+	// client is sending the first message
+	var err error
+	if n.first {
+		err = n.doHandshakeClient()
+	} else {
+		err = n.doHandshakeServer()
+	}
+	if err == nil {
+		n.handshakeDone = true
+	}
+	return err
+}
+
+var magicValue = []byte{0x19, 0x84}
+
+func (n *noiseStream) doHandshakeClient() error {
+	msg, _, _ := n.handshake.WriteMessage(nil, nil)
+	if err := n.channel.Send(msg); err != nil {
+		return err
+	}
+	eg, err := n.channel.Receive()
 	if err != nil {
 		return err
 	}
-	return str.w.wrap(buff)
-}
-
-func (str *stream) listen() {
-	for !str.stopped() {
-		from, buff, err := str.w.unwrap()
-		if err != nil {
-			slog.Print("stream interrupted:", err)
-			return
-		}
-		env, err := enc.Unmarshal(buff)
-		if err != nil {
-			continue
-		}
-		cm, ok := env.(*ClientMessage)
-		if !ok {
-			continue
-		}
-		str.r.push(from, cm)
+	_, enc, dec, err := n.handshake.ReadMessage(nil, eg.GetBlob())
+	if err != nil {
+		return err
 	}
+
+	n.encrypt = enc
+	n.decrypt = dec
+	return nil
 }
 
-func (str *stream) stopped() bool {
-	str.stopMut.Lock()
-	defer str.stopMut.Unlock()
-	return str.stopped
+func (n *noiseStream) doHandshakeServer() error {
+
+	eg, err := n.channel.Receive()
+	if err != nil {
+		return err
+	}
+
+	_, _, _, err = n.handshake.ReadMessage(nil, eg.GetBlob())
+	if err != nil {
+		return err
+	}
+
+	res, dec, enc := n.handshake.WriteMessage(nil, magicValue)
+	if err != nil {
+		return err
+	}
+
+	if err := n.channel.Send(res); err != nil {
+		return err
+	}
+	n.encrypt = enc
+	n.decrypt = dec
+	return nil
 }
 
-func (str *stream) stop() {
-	str.stopMut.Lock()
-	defer str.stopMut.Unlock()
-	str.stopped = true
-}
+/*func (str *stream) send(remote *Identity, msg *ClientMessage) error {*/
+//buff, err := enc.Marshal(msg)
+//if err != nil {
+//return err
+//}
+//return str.w.wrap(buff)
+//}
+
+/*func (str *stream) listen() {*/
+//for !str.stopped() {
+//from, buff, err := str.w.unwrap()
+//if err != nil {
+//slog.Print("stream interrupted:", err)
+//return
+//}
+//env, err := enc.Unmarshal(buff)
+//if err != nil {
+//continue
+//}
+//cm, ok := env.(*ClientMessage)
+//if !ok {
+//continue
+//}
+//str.r.push(from, cm)
+//}
+//}
+
+//func (str *stream) stopped() bool {
+//str.stopMut.Lock()
+//defer str.stopMut.Unlock()
+//return str.stopped
+//}
+
+//func (str *stream) stop() {
+//str.stopMut.Lock()
+//defer str.stopMut.Unlock()
+//str.stopped = true
+//}
 
 // channelID returns the channel id associated with the two given identity. It's
 // basically base64-encoded and sorted, then hashed. The second return value
 // denotes if own is first or not (useful to designate initiator).
-func channelID(own, remote Identity) (string, bool) {
-	str1, _ := util.PointToString64(own.Public)
-	str2, _ := util.PointToString64(remote.Public)
+func channelID(own, remote *Identity) (string, bool) {
+	str1 := own.ID()
+	str2 := remote.ID()
 	comp := strings.Compare(str1, str2)
 	var s1, s2 string
 	var first bool

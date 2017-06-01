@@ -3,66 +3,73 @@ package client
 import (
 	"bytes"
 	"crypto/sha512"
+	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
 
+	"golang.org/x/crypto/curve25519"
+	"golang.org/x/crypto/ed25519"
+
 	"github.com/BurntSushi/toml"
+	"github.com/agl/ed25519/extra25519"
 	net "github.com/nikkolasg/mulsigo/network"
 	"github.com/nikkolasg/mulsigo/util"
 	"gopkg.in/dedis/crypto.v0/abstract"
-	"gopkg.in/dedis/crypto.v0/sign"
 )
 
 type Private struct {
-	seed []byte
+	seed *ed25519.PrivateKey
 }
 
 func (p *Private) Scalar() abstract.Scalar {
 	h := sha512.New()
-	h.Write(p.seed[:32])
+	h.Write((*p.seed)[:32])
 	digest := h.Sum(nil)
 
 	digest[0] &= 248
 	digest[31] &= 127
 	digest[31] |= 64
 
-	s := suite.Scalar()
+	s := Suite.Scalar()
 	s.SetBytes(digest)
 	return s
 }
 
-func (p *Private) Public() Public {
-	s := p.Scalar()
-	return Suite.Point().Mul(nil, s)
+func (p *Private) Public() []byte {
+	return (*p.seed)[32:]
 }
 
-type Public abstract.Point
+func (p *Private) PrivateCurve25519() [32]byte {
+	return ed25519PrivateToCurve25519(p.seed)
+}
 
-func NewPrivateIdentity(name string, r io.Reader) (*Private, *Identity) {
-	// only need the first 32 bytes
-	var seed [32]byte
-	_, err := io.ReadFull(r, seed)
-	if err != nil {
-		return nil, nil, err
-	}
-	priv := &Private{seed}
+func (p *Private) PublicCurve25519() [32]byte {
+	priv := p.PrivateCurve25519()
+	var pubCurve [32]byte
+	curve25519.ScalarBaseMult(&pubCurve, &priv)
+
+	return pubCurve
+}
+
+func NewPrivateIdentity(name string, r io.Reader) (*Private, *Identity, error) {
+	pub, privEd, err := ed25519.GenerateKey(r)
+	priv := &Private{&privEd}
 
 	id := &Identity{
 		Name:      name,
 		CreatedAt: time.Now().Unix(),
-		Key:       priv.Public(),
+		Key:       pub,
 	}
 
-	err := id.selfsign(priv, r)
+	err = id.selfsign(priv, r)
 	return priv, id, err
 }
 
 type Identity struct {
 	Name      string
-	Key       Public
+	Key       []byte
 	CreatedAt int64
 	Signature []byte
 	// reachable - usually empty if using a relay but if provided, will enable
@@ -82,21 +89,32 @@ func (i *Identity) selfsign(p *Private, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	b, err := abstract.Point(i.Key).MarshalBinary()
-	if err != nil {
-		return err
-	}
-	buff.Write(b)
-	i.Signature, err = sign.Schnorr(Suite, p.Scalar(), buff.Bytes())
-	return err
+	buff.Write(i.Key)
+	i.Signature = ed25519.Sign(*p.seed, buff.Bytes())
+	return nil
 }
 
 func (i *Identity) Repr() string {
 	var buff bytes.Buffer
-	str, _ := util.PointToString64(i.Key)
+	str := base64.StdEncoding.EncodeToString(i.Key)
 	fmt.Fprintf(&buff, "id:\t%s ", i.Name)
 	fmt.Fprintf(&buff, "\n\t%s", str)
 	return buff.String()
+}
+
+func (i *Identity) ID() string {
+	return base64.StdEncoding.EncodeToString(i.Key)
+}
+
+func (i *Identity) PublicCurve25519() [32]byte {
+	var pubEd25519 [32]byte
+	var pubCurve [32]byte
+	copy(pubEd25519[:], i.Key)
+	ret := extra25519.PublicKeyToCurve25519(&pubCurve, &pubEd25519)
+	if !ret {
+		panic("corrupted private key? can't convert to curve25519")
+	}
+	return pubCurve
 }
 
 type privateToml struct {
@@ -104,7 +122,8 @@ type privateToml struct {
 }
 
 func (p *Private) Toml() interface{} {
-	seedStr, _ := util.ScalarToString64(p.seed)
+	seedStr := base64.StdEncoding.EncodeToString(*p.seed)
+
 	return &privateToml{seedStr}
 }
 
@@ -114,7 +133,9 @@ func (p *Private) FromToml(f string) error {
 	if err != nil {
 		return err
 	}
-	p.seed, err = util.String64ToScalar(Suite, pt.Seed)
+	seed, err := base64.StdEncoding.DecodeString(pt.Seed)
+	seedEd25519 := ed25519.PrivateKey(seed)
+	p.seed = &seedEd25519
 	return err
 }
 
@@ -127,8 +148,8 @@ type identityToml struct {
 }
 
 func (i *Identity) Toml() interface{} {
-	publicStr, _ := util.PointToStringHex(Suite, i.Key)
-	sigStr := hex.EncodeToString(i.Signature)
+	publicStr := base64.StdEncoding.EncodeToString(i.Key)
+	sigStr := base64.StdEncoding.EncodeToString(i.Signature)
 	return &identityToml{
 		Key:       publicStr,
 		Signature: sigStr,
@@ -144,17 +165,18 @@ func (i *Identity) FromToml(f string) error {
 	if err != nil {
 		return err
 	}
-	public, err := util.StringHexToPoint(Suite, it.Key)
+	public, err := base64.StdEncoding.DecodeString(it.Key)
 	if err != nil {
 		return err
 	}
-	signature, err := hex.DecodeString(it.Signature)
+	signature, err := base64.StdEncoding.DecodeString(it.Signature)
 	if err != nil {
 		return err
 	}
 	i.Name = it.Name
 	i.Key = public
 	i.Address = net.Address(it.Address)
+	i.Signature = signature
 	return nil
 }
 
@@ -218,4 +240,22 @@ func (g *GroupConfig) toml() interface{} {
 		T:         g.T,
 		PgpPublic: g.PgpPublic,
 	}
+}
+
+func ed25519PrivateToCurve25519(p *ed25519.PrivateKey) [32]byte {
+	var buff [64]byte
+	copy(buff[:], *p)
+	var curvePriv [32]byte
+
+	extra25519.PrivateKeyToCurve25519(&curvePriv, &buff)
+	return curvePriv
+}
+
+func ed25519PublicToCurve25519(p *ed25519.PublicKey) ([32]byte, bool) {
+	var buff [32]byte
+	copy(buff[:], *p)
+	var curvePub [32]byte
+
+	ret := extra25519.PublicKeyToCurve25519(&curvePub, &buff)
+	return curvePub, ret
 }
