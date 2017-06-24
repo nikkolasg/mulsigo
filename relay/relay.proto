@@ -39,8 +39,8 @@ message Ingress {
 }
 
 message Egress  {
-
-    string address = 1;
-
+    string from = 1;
     bytes blob = 2;
 }
+
+

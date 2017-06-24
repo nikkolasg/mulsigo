@@ -1,9 +1,5 @@
 syntax = "proto3";
 
-message NoiseMessage {
-    bytes cipher = 1;
-}
-
 message ClientMessage {
 
 }

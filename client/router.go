@@ -9,6 +9,7 @@ import (
 	"github.com/flynn/noise"
 	"github.com/nikkolasg/mulsigo/network"
 	"github.com/nikkolasg/mulsigo/relay"
+	"github.com/nikkolasg/mulsigo/slog"
 )
 
 // Router is an interface whose main purpose is to provide a generic mean to
@@ -16,9 +17,23 @@ import (
 // will be useful to transform the "every message goes to relay"-approach to a
 // "point-to-point communication"-approach.
 type Router interface {
-	Send(Identity, *ClientMessage) error
-	Receive() (Identity, *ClientMessage, error)
-	Broadcast(cm *ClientMessage, ids ...Identity) error
+	Dispatcher
+	Send(*Identity, *ClientMessage) error
+	Broadcast(cm *ClientMessage, ids ...*Identity) error
+	Close()
+}
+
+// Dispatcher receives messages and dispatch them to the registered processors.
+// If multiple processors are registered, each message is dispatched to each
+// processors.
+type Dispatcher interface {
+	RegisterProcessor(Processor)
+	Dispatch(*Identity, *ClientMessage)
+}
+
+// Processor can receive a message from a dispatcher.
+type Processor interface {
+	Process(*Identity, *ClientMessage)
 }
 
 // BiLinkRouter establish a relay channel for each destination address
@@ -31,8 +46,11 @@ type clientRouter struct {
 	// multiplexer used to derive the channels
 	multiplexer *relay.Multiplexer
 	// list of open streams maintained by the router
-	streams    map[string]*noiseStream
-	streamsMut sync.Mutex
+	streams map[string]*noiseStream
+	sync.Mutex
+
+	// dispatcher used to dispatch message
+	Dispatcher
 
 	doneMut sync.Mutex
 	done    bool
@@ -40,37 +58,61 @@ type clientRouter struct {
 
 // NewRelayRouter returns a router that communicates with a relay in a
 // transparent way to the given address.
-/*func NewClientRouter(priv *Private, pub *Identity, m *relay.Multiplexer) Router {*/
-//blr := &clientRouter{
-//priv:        priv,
-//id:          pub,
-//multiplexer: m,
-//streams:     make(map[string]*noiseStream),
-//}
-//return blr
-//}
+func NewClientRouter(priv *Private, pub *Identity, m *relay.Multiplexer) Router {
+	blr := &clientRouter{
+		priv:        priv,
+		id:          pub,
+		multiplexer: m,
+		streams:     make(map[string]*noiseStream),
+		Dispatcher:  newSeqDispatcher(),
+	}
+	return blr
+}
 
-//func (blr *clientRouter) Send(remote *Identity, msg interface{}) error {
-//blr.Lock()
-//defer blr.Unlock()
-//id, first, err := channelID(blr.id, remote)
-//if err != nil {
-//return err
-//}
+// Send fetch or create the corresponding channel corresponding to the pair tied
+// to the given remote identity. It then sends the message down that channel.
+func (blr *clientRouter) Send(remote *Identity, msg *ClientMessage) error {
+	blr.Lock()
+	defer blr.Unlock()
+	id, _ := channelID(blr.id, remote)
 
-//stream, ok := blr.streams[remote.ID()]
-//if !ok {
-//channel, err = blr.multiplexer.Channel(id)
-//if err != nil {
-//return err
-//}
-//stream = newStream(blr.priv, blr.id, remote, channel)
-//blr.streams[id] = stream
-//}
-//channel.Send(msg)
-//}
+	stream, ok := blr.streams[remote.ID()]
+	if !ok {
+		// create the channel abstraction
+		channel, err := blr.multiplexer.Channel(id)
+		if err != nil {
+			return err
+		}
 
-//func (blr *clientRouter) Broadcast(m
+		stream = newNoiseStream(blr.priv, blr.id, remote, channel, blr)
+		blr.streams[id] = stream
+		if err := stream.doHandshake(); err != nil {
+			return err
+		}
+		go stream.listen()
+	}
+	return stream.Send(msg)
+}
+
+// Broadcast sends the message to all destinations given in ids. It returns as
+// soon as an error is detected.
+func (blr *clientRouter) Broadcast(msg *ClientMessage, ids ...*Identity) error {
+	for _, i := range ids {
+		if err := blr.Send(i, msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Close will close all registered streams.
+func (blr *clientRouter) Close() {
+	blr.Lock()
+	defer blr.Unlock()
+	for _, s := range blr.streams {
+		s.stop()
+	}
+}
 
 const (
 	// Noise_KK(s, rs):
@@ -79,31 +121,52 @@ const (
 	// -> e, es, ss  msg3
 	// <- e, ee, se  done
 	none = iota
-	hello
 	done
 )
 
 var enc = network.NewSingleProtoEncoder(ClientMessage{})
 
-//var cipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
-var cipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherAESGCM, noise.HashSHA256)
+var cipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
 
+//var cipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherAESGCM, noise.HashSHA256)
+
+// magic value being the common string given in the noise handshake
+var magicValue = []byte{0x19, 0x84}
+
+// how many incorrect messages do we allow before returning an error. This is
+// necessary since anybody could join the channel.
+var maxIncorrectMessages = 100
+
+// noiseStream reads and sends message to/from a relay.Channel. Each message is
+// encrypted using the Noise framework.
 type noiseStream struct {
-	channelID     string
-	remote        *Identity
+	// identity of the remote participant, needed for Noise communication
+	remote *Identity
+	// first denotes who is supposed to send the first message
+	first bool
+	// noise related variables
 	handshake     *noise.HandshakeState
-	handshakeDone bool
-	first         bool
-	channel       relay.Channel
 	encrypt       *noise.CipherState
 	decrypt       *noise.CipherState
+	handshakeDone bool
+	// the underlying channel where to send data to
+	channel relay.Channel
+	// the dispatcher where to relay incoming messages from the channel
+	dispatcher Dispatcher
+
+	// is this noiseStream finished or not
+	stopped bool
+	stopMut sync.Mutex
 }
 
-func newNoiseStream(priv *Private, pub, remote *Identity, ch relay.Channel) *noiseStream {
+// newNoiseStream returns a stream encrypting messages using the noise
+// framework. After that call, the caller must call "stream.doHandshake()` and
+// verify the return error.
+func newNoiseStream(priv *Private, pub, remote *Identity, ch relay.Channel, d Dispatcher) *noiseStream {
 	str := &noiseStream{
-		channelID: ch.Id(),
-		remote:    remote,
-		channel:   ch,
+		remote:     remote,
+		channel:    ch,
+		dispatcher: d,
 	}
 	_, str.first = channelID(pub, remote)
 
@@ -146,18 +209,12 @@ func (n *noiseStream) doHandshake() error {
 	return err
 }
 
-var magicValue = []byte{0x19, 0x84}
-
 func (n *noiseStream) doHandshakeClient() error {
 	msg, _, _ := n.handshake.WriteMessage(nil, nil)
 	if err := n.channel.Send(msg); err != nil {
 		return err
 	}
-	eg, err := n.channel.Receive()
-	if err != nil {
-		return err
-	}
-	_, enc, dec, err := n.handshake.ReadMessage(nil, eg.GetBlob())
+	enc, dec, err := n.receiveHandshake()
 	if err != nil {
 		return err
 	}
@@ -168,13 +225,7 @@ func (n *noiseStream) doHandshakeClient() error {
 }
 
 func (n *noiseStream) doHandshakeServer() error {
-
-	eg, err := n.channel.Receive()
-	if err != nil {
-		return err
-	}
-
-	_, _, _, err = n.handshake.ReadMessage(nil, eg.GetBlob())
+	_, _, err := n.receiveHandshake()
 	if err != nil {
 		return err
 	}
@@ -192,44 +243,81 @@ func (n *noiseStream) doHandshakeServer() error {
 	return nil
 }
 
-/*func (str *stream) send(remote *Identity, msg *ClientMessage) error {*/
-//buff, err := enc.Marshal(msg)
-//if err != nil {
-//return err
-//}
-//return str.w.wrap(buff)
-//}
+// receiveHandshake tries to receive a correct handshake message a
+// "maxIncorrectMessage" number of times.
+func (n *noiseStream) receiveHandshake() (*noise.CipherState, *noise.CipherState, error) {
+	for i := 0; i < maxIncorrectMessages; i++ {
+		_, buff, err := n.channel.Receive()
+		if err != nil {
+			continue
+		}
+		_, enc, dec, err := n.handshake.ReadMessage(nil, buff)
+		if err != nil {
+			continue
+		}
+		return enc, dec, err
+	}
+	return nil, nil, errors.New("noise: can't validate one out of 100 handshake. Probably being DOS'd")
+}
 
-/*func (str *stream) listen() {*/
-//for !str.stopped() {
-//from, buff, err := str.w.unwrap()
-//if err != nil {
-//slog.Print("stream interrupted:", err)
-//return
-//}
-//env, err := enc.Unmarshal(buff)
-//if err != nil {
-//continue
-//}
-//cm, ok := env.(*ClientMessage)
-//if !ok {
-//continue
-//}
-//str.r.push(from, cm)
-//}
-//}
+// Sends takes a message encrypts it using the noise framework and sends it down
+// to the channel.
+func (n *noiseStream) Send(msg *ClientMessage) error {
+	if !n.handshakeDone {
+		return errors.New("noiseStream: doHandshake() not called before Send()")
+	}
+	buff, err := enc.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	cipher := n.encrypt.Encrypt(nil, nil, buff)
+	return n.channel.Send(cipher)
+}
 
-//func (str *stream) stopped() bool {
-//str.stopMut.Lock()
-//defer str.stopMut.Unlock()
-//return str.stopped
-//}
+// listen is an infinite loop listening for incoming messages from the
+// underlying channel, decrypting them using Noise and dispatching them to the
+// Dispatcher. It stops when `stop()` is called.
+func (n *noiseStream) listen() {
+	for !n.isStopped() {
+		_, buff, err := n.channel.Receive()
+		if err != nil {
+			slog.Print("noise: interruption", err)
+			return
+		}
+		plain, err := n.decrypt.Decrypt(nil, nil, buff)
+		// incorrect messages are just no-op
+		if err != nil {
+			continue
+		}
 
-//func (str *stream) stop() {
-//str.stopMut.Lock()
-//defer str.stopMut.Unlock()
-//str.stopped = true
-//}
+		env, err := enc.Unmarshal(plain)
+		if err != nil {
+			slog.Print("noise: received incorrect protobuf message")
+			continue
+		}
+		cm, ok := env.(*ClientMessage)
+		if !ok {
+			slog.Print("noise: received incorrect protobuf message")
+			continue
+		}
+		n.dispatcher.Dispatch(n.remote, cm)
+	}
+}
+
+// isStopped returns whether this stream is closed or not.
+func (str *noiseStream) isStopped() bool {
+	str.stopMut.Lock()
+	defer str.stopMut.Unlock()
+	return str.stopped
+}
+
+// stop closes the stream and the underlying channel.
+func (str *noiseStream) stop() {
+	str.stopMut.Lock()
+	defer str.stopMut.Unlock()
+	str.channel.Close()
+	str.stopped = true
+}
 
 // channelID returns the channel id associated with the two given identity. It's
 // basically base64-encoded and sorted, then hashed. The second return value
@@ -252,4 +340,28 @@ func channelID(own, remote *Identity) (string, bool) {
 	h.Write([]byte(s1))
 	h.Write([]byte(s2))
 	return string(h.Sum(nil)), first
+}
+
+// seqDispatcher is a simple dispatcher sequentially dispatching message to the
+// registered processors.
+type seqDispatcher struct {
+	procs []Processor
+}
+
+// newSeqDispatcher returns a Dispatcher that dispatch messages sequentially to
+// all registered processors, in the same go routine.
+func newSeqDispatcher() Dispatcher {
+	return &seqDispatcher{}
+}
+
+// RegisterProcessor implements the Dispatcher interface.
+func (s *seqDispatcher) RegisterProcessor(p Processor) {
+	s.procs = append(s.procs, p)
+}
+
+// Dispatch implements the Dispatcher interface.
+func (s *seqDispatcher) Dispatch(i *Identity, cm *ClientMessage) {
+	for _, p := range s.procs {
+		p.Process(i, cm)
+	}
 }
