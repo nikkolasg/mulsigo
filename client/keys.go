@@ -15,15 +15,18 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/agl/ed25519/extra25519"
 	net "github.com/nikkolasg/mulsigo/network"
-	"github.com/nikkolasg/mulsigo/util"
-	"gopkg.in/dedis/crypto.v0/abstract"
+	kyber "gopkg.in/dedis/kyber.v1"
+	"gopkg.in/dedis/kyber.v1/group/edwards25519"
+	"gopkg.in/dedis/kyber.v1/util/encoding"
 )
+
+var Group = edwards25519.NewAES128SHA256Ed25519(false)
 
 type Private struct {
 	seed *ed25519.PrivateKey
 }
 
-func (p *Private) Scalar() abstract.Scalar {
+func (p *Private) Scalar() kyber.Scalar {
 	h := sha512.New()
 	h.Write((*p.seed)[:32])
 	digest := h.Sum(nil)
@@ -32,7 +35,7 @@ func (p *Private) Scalar() abstract.Scalar {
 	digest[31] &= 127
 	digest[31] |= 64
 
-	s := Suite.Scalar()
+	s := Group.Scalar()
 	s.SetBytes(digest)
 	return s
 }
@@ -180,6 +183,14 @@ func (i *Identity) FromToml(f string) error {
 	return nil
 }
 
+func (i *Identity) Point() kyber.Point {
+	p := Group.Point()
+	if err := p.UnmarshalBinary(i.Key); err != nil {
+		panic(err)
+	}
+	return p
+}
+
 // GroupConfig is the public configuration of a group using mulsigo. It is
 // similar to a public pgp identity with a name, email and comment. It contains
 // the additional public information on all the participants of the group.
@@ -189,7 +200,7 @@ type GroupConfig struct {
 	Comment string
 
 	// coefficients of the public polynomial
-	Public []abstract.Point
+	Public []kyber.Point
 	// list of node's identity participating
 	Ids []Identity
 	// threshold of the group
@@ -218,7 +229,7 @@ type groupConfigToml struct {
 func (g *GroupConfig) toml() interface{} {
 	publics := make([]string, len(g.Public))
 	for i, p := range g.Public {
-		s, err := util.PointToString64(p)
+		s, err := encoding.PointToString64(Group, p)
 		if err != nil {
 			return err
 		}

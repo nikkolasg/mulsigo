@@ -1,9 +1,5 @@
 package client
 
-import "gopkg.in/dedis/crypto.v0/ed25519"
-
-var Suite = ed25519.NewAES128SHA256Ed25519(false)
-
 // Client can performs all distributed operations such as:
 // - generating a random distributed secret (rds)
 // - with two rds, it can sign a message
