@@ -190,6 +190,9 @@ func TestReliableStream(t *testing.T) {
 	require.Equal(t, uint32(2), r1.sequence)
 	require.Equal(t, uint32(1), r2.sequence)
 
+	// test closing then sending
+	r1.close()
+	require.Error(t, r1.send(msg2))
 }
 
 func dispatchStream(s stream, id *Identity, d Dispatcher) {
