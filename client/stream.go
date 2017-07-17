@@ -17,7 +17,8 @@ type stream interface {
 	close()
 }
 
-var ErrTimeout = errors.New("timeout on stream")
+var ErrTimeout = errors.New("stream: timeout occured")
+var ErrClosed = errors.New("stream: closed")
 
 // ReliableReadTimeout indicates how much time to wait for a "receive" operation
 // using the reliable stream mechanism
@@ -30,6 +31,10 @@ var ReliableWriteTimeout = 10 * time.Second
 // ReliableMessageBuffer indicates the maximum number of messages the reliable
 // stream meachanism can hold in memory for the application layer to read
 var ReliableMessageBuffer = 100
+
+// ReliableWaitRetry indicates the idle period between re-sending a packet to
+// get an ACK
+var ReliableWaitRetry = 1 * time.Second
 
 // how many incorrect messages do we allow before returning an error. This is
 // necessary since anybody could join and spam any channel.
@@ -72,6 +77,7 @@ func newReliableStream(s stream) stream {
 }
 
 func (r *reliableStream) stateMachine() {
+	var lastAckd uint32
 	for {
 		rec, err := r.stream.receive()
 		if err != nil {
@@ -92,12 +98,20 @@ func (r *reliableStream) stateMachine() {
 			}
 			encoded, err := reliableEncoder.Marshal(packet)
 			if err != nil {
-				panic("something's wrong with the encoding")
+				panic("something's wrong with the encoding" + err.Error())
 			}
 			if err := r.stream.send(encoded); err != nil {
 				r.setError(err)
 				return
 			}
+
+			// pass unique message to the layer above
+			// linearly increasing sequence number
+
+			if rp.Sequence <= lastAckd {
+				continue
+			}
+			lastAckd = rp.Sequence
 			r.dataCh <- rp.Data
 		case RELIABLE_ACK:
 			r.ackCh <- rp.Sequence
@@ -117,7 +131,7 @@ func (r *reliableStream) send(buf []byte) error {
 	}
 	encoded, err := reliableEncoder.Marshal(packet)
 	if err != nil {
-		panic("something's wrong with the encoding")
+		panic("something's wrong with the encoding" + err.Error())
 	}
 	if err := r.stream.send(encoded); err != nil {
 		r.setError(err)
@@ -125,11 +139,10 @@ func (r *reliableStream) send(buf []byte) error {
 	}
 	// try many times to get an ack
 	for i := 0; i < MaxIncorrectMessages; i++ {
-		if i != 0 {
-			time.Sleep(1 * time.Second)
-		}
 		select {
 		case ack := <-r.ackCh:
+			// only handling one packet at a time for the moment, no window
+			// mechanism
 			if ack != packet.Sequence {
 				continue
 			}
@@ -137,12 +150,19 @@ func (r *reliableStream) send(buf []byte) error {
 			return nil
 		case <-r.errCh:
 			return r.getError()
-		case <-time.After(10 * time.Second):
-			i += MaxIncorrectMessages / 10
-			continue
+		case <-r.done:
+			return ErrClosed
+		case <-time.After(ReliableWaitRetry):
+			i += MaxIncorrectMessages / 10.0
+			// re-send it again
+			if err := r.stream.send(encoded); err != nil {
+				r.setError(err)
+				return err
+			}
 		}
+
 	}
-	return errors.New("reliable stream: no ack received in long time")
+	return ErrTimeout
 }
 
 func (r *reliableStream) receive() ([]byte, error) {
@@ -152,6 +172,8 @@ func (r *reliableStream) receive() ([]byte, error) {
 	case <-r.errCh:
 		// could directly return the error but "write" also needs it anyway
 		return nil, r.getError()
+	case <-r.done:
+		return nil, ErrClosed
 	case <-time.After(ReliableReadTimeout):
 		return nil, ErrTimeout
 	}
@@ -172,6 +194,7 @@ func (r *reliableStream) getError() error {
 
 func (r *reliableStream) close() {
 	close(r.done)
+	r.stream.close()
 }
 
 const (

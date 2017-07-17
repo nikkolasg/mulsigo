@@ -24,5 +24,5 @@ const (
 type ReliablePacket struct {
 	Type     ReliableType
 	Sequence uint32
-	Data     []byte
+	Data     []byte `protobuf:"opt"`
 }

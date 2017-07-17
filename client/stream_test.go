@@ -2,12 +2,43 @@ package client
 
 import (
 	"crypto/rand"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/nikkolasg/mulsigo/relay"
 	"github.com/stretchr/testify/require"
 )
+
+type fakeStream struct {
+	buffers chan []byte
+	remote  *fakeStream
+}
+
+func NewFakeStreamsPair() (*fakeStream, *fakeStream) {
+	f1 := &fakeStream{buffers: make(chan []byte, 10)}
+	f2 := &fakeStream{buffers: make(chan []byte, 10)}
+	f1.remote = f2
+	f2.remote = f1
+	return f1, f2
+}
+
+func (f *fakeStream) send(buff []byte) error {
+	f.remote.buffers <- buff
+	return nil
+}
+
+func (f *fakeStream) receive() ([]byte, error) {
+	b, ok := <-f.buffers
+	if !ok {
+		return nil, errors.New("fakestream closed")
+	}
+	return b, nil
+}
+
+func (f *fakeStream) close() {
+	//
+}
 
 type fakeChannel struct {
 	addr   string
@@ -118,6 +149,46 @@ func TestNoiseStreamDispatching(t *testing.T) {
 }
 
 func TestReliableStream(t *testing.T) {
+	f1, f2 := NewFakeStreamsPair()
+	r1 := newReliableStream(f1).(*reliableStream)
+	r2 := newReliableStream(f2).(*reliableStream)
+
+	msg := []byte("Hello World")
+	msg2 := []byte("Hello Universe")
+
+	// test repeating ack
+	defer func(defValue int) { MaxIncorrectMessages = defValue }(MaxIncorrectMessages)
+	MaxIncorrectMessages = 2
+	defer func(defValue time.Duration) { ReliableWaitRetry = defValue }(ReliableWaitRetry)
+	ReliableWaitRetry = time.Millisecond * 100
+
+	require.Error(t, r1.send(msg))
+	require.Len(t, f2.buffers, 3)
+	require.Equal(t, uint32(1), r1.sequence)
+
+	f1, f2 = NewFakeStreamsPair()
+	r1 = newReliableStream(f1).(*reliableStream)
+	r2 = newReliableStream(f2).(*reliableStream)
+
+	go r1.stateMachine()
+	go r2.stateMachine()
+	// test sending a message
+	require.Nil(t, r1.send(msg2))
+	buff, err := r2.receive()
+	require.Nil(t, err)
+	require.Equal(t, msg2, buff)
+	require.Equal(t, uint32(1), r1.sequence)
+
+	// test sending messages simultaneously
+	go func() { require.Nil(t, r1.send(msg2)) }()
+	go func() { require.Nil(t, r2.send(msg2)) }()
+
+	_, err = r1.receive()
+	require.Nil(t, err)
+	_, err = r2.receive()
+	require.Nil(t, err)
+	require.Equal(t, uint32(2), r1.sequence)
+	require.Equal(t, uint32(1), r2.sequence)
 
 }
 
