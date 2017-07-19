@@ -1,5 +1,7 @@
 package client
 
+import "gopkg.in/dedis/kyber.v1/share/pedersen/dkg"
+
 const (
 	PROTOCOL_PDKG = iota
 	PROTOCOL_RDKG = iota
@@ -12,6 +14,9 @@ type ClientMessage struct {
 }
 
 type PDkg struct {
+	Deal          *dkg.Deal
+	Response      *dkg.Response
+	Justification *dkg.Justification
 }
 
 type ReliableType bool

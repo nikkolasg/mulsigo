@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+	"math"
 	"sync"
 	"time"
 
@@ -11,13 +12,25 @@ import (
 	"github.com/nikkolasg/mulsigo/slog"
 )
 
+// stream is an abstraction to represent any ways to connect to a remote peer.
+// The equivalent of a net.Con interface.
 type stream interface {
 	send(buff []byte) error
 	receive() ([]byte, error)
 	close()
 }
 
+// streamFactory abstracts the creation of streams so the Router can use streams
+// without any knowledge of the underlying implementation.
+type streamFactory interface {
+	newStream(to *Identity) (stream, error)
+}
+
+// ErrTimeout is returned when a timeout has occured on a stream
 var ErrTimeout = errors.New("stream: timeout occured")
+
+// ErrClosed is returned when one call send() or receive() over a stream while
+// the stream is closed
 var ErrClosed = errors.New("stream: closed")
 
 // ReliableReadTimeout indicates how much time to wait for a "receive" operation
@@ -53,6 +66,40 @@ var cipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, no
 
 // magic value being the common string given in the noise handshake
 var magicValue = []byte{0x19, 0x84}
+
+// channelStreamFactory creates reliable stream based on relay.Channel
+type channelStreamFactory struct {
+	priv        *Private
+	pub         *Identity
+	multiplexer *relay.Multiplexer
+}
+
+// newChannelStreamFactory returns a streamFactory that returns channel-based
+// stream with additional reliability handled by reliableStream.
+func newChannelStreamFactory(priv *Private, pub *Identity, mult *relay.Multiplexer) *channelStreamFactory {
+	return &channelStreamFactory{priv: priv, pub: pub}
+}
+
+func (c *channelStreamFactory) newStream(to *Identity) (stream, error) {
+	// XXX would be nice to remove some of the repetitive computations ...
+	id, _ := channelID(c.pub, to)
+	// create the channel abstraction
+	channel, err := c.multiplexer.Channel(id)
+	if err != nil {
+		return nil, err
+	}
+
+	stream := newNoiseStream(c.priv, c.pub, to, channel)
+	if err := stream.doHandshake(); err != nil {
+		return nil, err
+	}
+	reliable := newReliableStream(stream)
+	return reliable, nil
+}
+
+type connStreamFactory struct {
+	// XXX TODO
+}
 
 type reliableStream struct {
 	stream
@@ -153,7 +200,7 @@ func (r *reliableStream) send(buf []byte) error {
 		case <-r.done:
 			return ErrClosed
 		case <-time.After(ReliableWaitRetry):
-			i += MaxIncorrectMessages / 10.0
+			i += int(math.Ceil(float64(MaxIncorrectMessages) / 10.0))
 			// re-send it again
 			if err := r.stream.send(encoded); err != nil {
 				r.setError(err)
@@ -228,11 +275,10 @@ type noiseStream struct {
 // newNoiseStream returns a stream encrypting messages using the noise
 // framework. After that call, the caller must call "stream.doHandshake()` and
 // verify the return error.
-func newNoiseStream(priv *Private, pub, remote *Identity, ch relay.Channel, d Dispatcher) *noiseStream {
+func newNoiseStream(priv *Private, pub, remote *Identity, ch relay.Channel) *noiseStream {
 	str := &noiseStream{
-		remote:     remote,
-		channel:    ch,
-		dispatcher: d,
+		remote:  remote,
+		channel: ch,
 	}
 	_, str.first = channelID(pub, remote)
 

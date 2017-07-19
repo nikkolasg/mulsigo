@@ -86,8 +86,8 @@ func TestNoiseStreamHandshake(t *testing.T) {
 	// create a fake channel between the two identities
 	c1, c2 := createFakeChannelPair()
 
-	n1 := newNoiseStream(p1, i1, i2, c1, nil)
-	n2 := newNoiseStream(p2, i2, i1, c2, nil)
+	n1 := newNoiseStream(p1, i1, i2, c1)
+	n2 := newNoiseStream(p2, i2, i1, c2)
 
 	var ch = make(chan error)
 	go func() {
@@ -122,8 +122,8 @@ func TestNoiseStreamDispatching(t *testing.T) {
 	d.RegisterProcessor(&proc)
 
 	// create the noise streams
-	n1 := newNoiseStream(p1, i1, i2, c1, d)
-	n2 := newNoiseStream(p2, i2, i1, c2, d)
+	n1 := newNoiseStream(p1, i1, i2, c1)
+	n2 := newNoiseStream(p2, i2, i1, c2)
 	// do the handshake
 	var handshakeDone = make(chan bool)
 	go func() { err := n1.doHandshake(); require.Nil(t, err); handshakeDone <- true }()

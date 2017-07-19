@@ -5,20 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nikkolasg/mulsigo/relay"
 	"github.com/nikkolasg/mulsigo/slog"
 )
-
-// Router is an interface whose main purpose is to provide a generic mean to
-// receive and send message to a Client whether a relay or not is used. This
-// will be useful to transform the "every message goes to relay"-approach to a
-// "point-to-point communication"-approach.
-type Router interface {
-	Dispatcher
-	Send(*Identity, *ClientMessage) error
-	Broadcast(cm *ClientMessage, ids ...*Identity) error
-	Close()
-}
 
 // Dispatcher receives messages, decode them and dispatch them to the registered
 // processors. If multiple processors are registered, each message is dispatched
@@ -33,62 +21,59 @@ type Processor interface {
 	Process(*Identity, *ClientMessage)
 }
 
-// BiLinkRouter establish a relay channel for each destination address
-// It implements the client.Router interface.
-type relayRouter struct {
-	// the private key material
-	priv *Private
-	// the identity advertised by this router
-	id *Identity
-	// multiplexer used to derive the channels
-	multiplexer *relay.Multiplexer
-	// list of open streams maintained by the router
-	streams map[string]*noiseStream
-	sync.Mutex
-
+// Router is the main "network" entry point enabling one to send messages to a
+// peer and to receive any messages.
+// If it were an interface, it would look like:
+//   type Router interface
+//      Dispatcher
+//   	Send(*Identity, *ClientMessage) error
+//   	Broadcast(cm *ClientMessage, ids ...*Identity) error
+//   	Close()
+//   }
+//
+// Originally, the router was an interface but then extracted the only generic
+// behavior to streamFactory.
+type Router struct {
 	// dispatcher used to dispatch message
 	Dispatcher
-
+	// factory used to instantiate new streams
+	streamFactory
+	// global lock making one Send at a time
+	// XXX would there be a way to remove that constraint...
+	sync.Mutex
+	// public key representing this router
+	public *Identity
+	// list of open streams maintained by the router
+	streams map[string]stream
 	doneMut sync.Mutex
 	done    bool
 }
 
-// NewRelayRouter returns a router that communicates with a relay in a
-// transparent way to the given address.
-func NewRelayRouter(priv *Private, pub *Identity, m *relay.Multiplexer) Router {
-	blr := &relayRouter{
-		priv:        priv,
-		id:          pub,
-		multiplexer: m,
-		streams:     make(map[string]*noiseStream),
-		Dispatcher:  newSeqDispatcher(),
+// NewRouter returns a router that handles streams connections and is the main
+// public înterface to send / receive message
+func NewRouter(factory streamFactory) *Router {
+	blr := &Router{
+		streamFactory: factory,
+		streams:       make(map[string]stream),
+		Dispatcher:    newSeqDispatcher(),
 	}
 	return blr
 }
 
 // Send fetch or create the corresponding channel corresponding to the pair tied
 // to the given remote identity. It then sends the message down that channel.
-func (blr *relayRouter) Send(remote *Identity, msg *ClientMessage) error {
+func (blr *Router) Send(remote *Identity, msg *ClientMessage) error {
 	blr.Lock()
 	defer blr.Unlock()
-	id, _ := channelID(blr.id, remote)
-
 	stream, ok := blr.streams[remote.ID()]
 	if !ok {
-		// create the channel abstraction
-		channel, err := blr.multiplexer.Channel(id)
+		var err error
+		stream, err = blr.newStream(remote)
 		if err != nil {
-			return err
-		}
-
-		stream = newNoiseStream(blr.priv, blr.id, remote, channel, blr)
-		blr.streams[id] = stream
-		if err := stream.doHandshake(); err != nil {
 			return err
 		}
 		go blr.processStream(remote, stream)
 	}
-
 	buf, err := enc.Marshal(msg)
 	if err != nil {
 		return err
@@ -96,7 +81,7 @@ func (blr *relayRouter) Send(remote *Identity, msg *ClientMessage) error {
 	return stream.send(buf)
 }
 
-func (blr *relayRouter) processStream(id *Identity, s stream) {
+func (blr *Router) processStream(id *Identity, s stream) {
 	for {
 		buff, err := s.receive()
 		if err != nil {
@@ -115,7 +100,7 @@ func (blr *relayRouter) processStream(id *Identity, s stream) {
 
 // Broadcast sends the message in parallel to all destinations given in ids. It
 // returns the first error encountered.
-func (blr *relayRouter) Broadcast(msg *ClientMessage, ids ...*Identity) error {
+func (blr *Router) Broadcast(msg *ClientMessage, ids ...*Identity) error {
 	var done = make(chan error)
 	for _, i := range ids {
 		go func() {
@@ -135,7 +120,7 @@ func (blr *relayRouter) Broadcast(msg *ClientMessage, ids ...*Identity) error {
 }
 
 // Close will close all registered streams.
-func (blr *relayRouter) Close() {
+func (blr *Router) Close() {
 	blr.Lock()
 	defer blr.Unlock()
 	for _, s := range blr.streams {
