@@ -14,6 +14,11 @@ import (
 
 // stream is an abstraction to represent any ways to connect to a remote peer.
 // The equivalent of a net.Con interface.
+// When using a channel+noiseStream as the underlying communication medium, a
+// stream is created when both parties have connected to the same channel id and
+// have finished the acknowledgment phase.
+// When using a direct connection, each party knows if it must listen or
+// connect, then the noise handshake happens and finally the stream is returned.
 type stream interface {
 	send(buff []byte) error
 	receive() ([]byte, error)

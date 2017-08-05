@@ -2,78 +2,11 @@ package client
 
 import (
 	"crypto/rand"
-	"errors"
 	"testing"
 	"time"
 
-	"github.com/nikkolasg/mulsigo/relay"
 	"github.com/stretchr/testify/require"
 )
-
-type fakeStream struct {
-	buffers chan []byte
-	remote  *fakeStream
-}
-
-func NewFakeStreamsPair() (*fakeStream, *fakeStream) {
-	f1 := &fakeStream{buffers: make(chan []byte, 10)}
-	f2 := &fakeStream{buffers: make(chan []byte, 10)}
-	f1.remote = f2
-	f2.remote = f1
-	return f1, f2
-}
-
-func (f *fakeStream) send(buff []byte) error {
-	f.remote.buffers <- buff
-	return nil
-}
-
-func (f *fakeStream) receive() ([]byte, error) {
-	b, ok := <-f.buffers
-	if !ok {
-		return nil, errors.New("fakestream closed")
-	}
-	return b, nil
-}
-
-func (f *fakeStream) close() {
-	//
-}
-
-type fakeChannel struct {
-	addr   string
-	own    chan relay.Egress
-	remote *fakeChannel
-}
-
-func createFakeChannelPair() (relay.Channel, relay.Channel) {
-	c1 := &fakeChannel{addr: cAddr1.String(), own: make(chan relay.Egress, 50)}
-	c2 := &fakeChannel{addr: cAddr2.String(), own: make(chan relay.Egress, 50)}
-	c1.remote = c2
-	c2.remote = c1
-	return c1, c2
-}
-
-func (f *fakeChannel) Send(b []byte) error {
-	f.remote.own <- relay.Egress{
-		Address: f.addr,
-		Blob:    b,
-	}
-	return nil
-}
-
-func (f *fakeChannel) Receive() (string, []byte, error) {
-	e := <-f.own
-	return e.GetAddress(), e.GetBlob(), nil
-}
-
-func (f *fakeChannel) Id() string {
-	return "fake"
-}
-
-func (f *fakeChannel) Close() {
-	close(f.own)
-}
 
 func TestNoiseStreamHandshake(t *testing.T) {
 
@@ -163,7 +96,7 @@ func TestReliableStream(t *testing.T) {
 	ReliableWaitRetry = time.Millisecond * 100
 
 	require.Error(t, r1.send(msg))
-	require.Len(t, f2.buffers, 3)
+	require.Len(t, f2.buffers, 2)
 	require.Equal(t, uint32(1), r1.sequence)
 
 	f1, f2 = NewFakeStreamsPair()
@@ -180,8 +113,15 @@ func TestReliableStream(t *testing.T) {
 	require.Equal(t, uint32(1), r1.sequence)
 
 	// test sending messages simultaneously
-	go func() { require.Nil(t, r1.send(msg2)) }()
-	go func() { require.Nil(t, r2.send(msg2)) }()
+	done := make(chan bool)
+	go func() {
+		require.Nil(t, r1.send(msg2))
+		done <- true
+	}()
+	go func() {
+		require.Nil(t, r2.send(msg2))
+		done <- true
+	}()
 
 	_, err = r1.receive()
 	require.Nil(t, err)
@@ -189,6 +129,9 @@ func TestReliableStream(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, uint32(2), r1.sequence)
 	require.Equal(t, uint32(1), r2.sequence)
+
+	<-done
+	<-done
 
 	// test closing then sending
 	r1.close()
