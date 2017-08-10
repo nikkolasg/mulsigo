@@ -23,7 +23,8 @@ import (
 var Group = edwards25519.NewAES128SHA256Ed25519()
 
 type Private struct {
-	seed *ed25519.PrivateKey
+	seed   *ed25519.PrivateKey
+	Public *Identity
 }
 
 func (p *Private) Scalar() kyber.Scalar {
@@ -38,10 +39,6 @@ func (p *Private) Scalar() kyber.Scalar {
 	s := Group.Scalar()
 	s.SetBytes(digest)
 	return s
-}
-
-func (p *Private) Public() []byte {
-	return (*p.seed)[32:]
 }
 
 func (p *Private) PrivateCurve25519() [32]byte {
@@ -59,12 +56,12 @@ func (p *Private) PublicCurve25519() [32]byte {
 func NewPrivateIdentity(name string, r io.Reader) (*Private, *Identity, error) {
 	pub, privEd, err := ed25519.GenerateKey(r)
 	priv := &Private{&privEd}
-
 	id := &Identity{
 		Name:      name,
 		CreatedAt: time.Now().Unix(),
 		Key:       pub,
 	}
+	priv.Public = id
 
 	err = id.selfsign(priv, r)
 	return priv, id, err

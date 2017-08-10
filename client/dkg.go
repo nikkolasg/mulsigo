@@ -2,8 +2,10 @@ package client
 
 import (
 	"errors"
+	"sync"
 	"time"
 
+	"github.com/dedis/kyber/random"
 	"github.com/nikkolasg/mulsigo/slog"
 	kyber "gopkg.in/dedis/kyber.v1"
 	"gopkg.in/dedis/kyber.v1/share/pedersen/dkg"
@@ -14,12 +16,14 @@ type DKG struct {
 	participants []*Identity
 	n            int
 	t            int
-	router       Router
+	router       *Router
 	dkg          *dkg.DistKeyGenerator
 	shareCh      chan *dkg.DistKeyShare
+	done         bool
+	sync.Mutex
 }
 
-func NewDKG(priv *Private, pub *Identity, participants []*Identity, r Router) (*DKG, error) {
+func NewDKG(priv *Private, pub *Identity, participants []*Identity, r *Router) (*DKG, error) {
 	d := &DKG{
 		private:      priv,
 		participants: participants,
@@ -44,7 +48,9 @@ func NewDKG(priv *Private, pub *Identity, participants []*Identity, r Router) (*
 	broadcastList := publics[:idx]
 	broadcastList = append(broadcastList, publics[idx+1:]...)
 	d.router.RegisterProcessor(d)
-	return d, nil
+	var err error
+	d.dkg, err = dkg.NewDistKeyGenerator(Group, d.private.Scalar(), publics, random.Stream, d.t)
+	return d, err
 }
 
 func (d *DKG) Run() (*dkg.DistKeyShare, error) {
@@ -56,6 +62,8 @@ func (d *DKG) Run() (*dkg.DistKeyShare, error) {
 }
 
 func (d *DKG) Process(id *Identity, cm *ClientMessage) {
+	d.Lock()
+	defer d.Unlock()
 	correct := cm.Type == PROTOCOL_PDKG &&
 		cm.PDkg != nil
 
@@ -77,7 +85,7 @@ func (d *DKG) Process(id *Identity, cm *ClientMessage) {
 func (d *DKG) processDeal(id *Identity, deal *dkg.Deal) {
 	resp, err := d.dkg.ProcessDeal(deal)
 	if err != nil {
-		slog.Print("dkg: deal error: " + err.Error())
+		slog.Fatal("dkg: deal error: " + err.Error())
 	}
 	msg := &ClientMessage{
 		Type: PROTOCOL_PDKG,
@@ -86,7 +94,7 @@ func (d *DKG) processDeal(id *Identity, deal *dkg.Deal) {
 		},
 	}
 
-	if err := d.router.Send(id, msg); err != nil {
+	if err := d.router.Broadcast(msg, d.participants...); err != nil {
 		slog.Info("dkg: send response error", err)
 		return
 	}
@@ -111,6 +119,12 @@ func (d *DKG) processResponse(id *Identity, deal *dkg.Response) {
 	}
 
 	if d.dkg.Certified() {
+		dks, err := d.dkg.DistKeyShare()
+		if err != nil {
+			panic(err)
+		}
+		d.done = true
+		d.shareCh <- dks
 	}
 }
 

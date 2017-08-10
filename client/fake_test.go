@@ -14,6 +14,26 @@ import (
 
 var count int
 
+func BatchPrivateIdentity(n int) ([]*Private, []*Identity) {
+	var privs = make([]*Private, n)
+	var pubs = make([]*Identity, n)
+	for i := 0; i < n; i++ {
+		privs[i], pubs[i] = FakePrivateIdentity()
+	}
+	return privs, pubs
+}
+
+func BatchRouters(ids []*Identity) []*Router {
+	glob := NewGlobalStreamFactory()
+	routers := make([]*Router, len(ids))
+
+	for i, id := range ids {
+		fact := glob.Sub(id)
+		routers[i] = NewRouter(fact)
+	}
+	return routers
+}
+
 func FakePrivateIdentity() (*Private, *Identity) {
 	name := "John-" + strconv.Itoa(count)
 	count++
@@ -22,15 +42,6 @@ func FakePrivateIdentity() (*Private, *Identity) {
 		panic(err)
 	}
 	return priv, id
-}
-
-func BatchPrivateIdentity(n int) ([]*Private, []*Identity) {
-	var privs = make([]*Private, n)
-	var pubs = make([]*Identity, n)
-	for i := 0; i < n; i++ {
-		privs[i], pubs[i] = FakePrivateIdentity()
-	}
-	return privs, pubs
 }
 
 type globalStreamFactory struct {
