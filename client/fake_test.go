@@ -4,11 +4,34 @@
 package client
 
 import (
+	"crypto/rand"
 	"errors"
+	"strconv"
 	"sync"
 
 	"github.com/nikkolasg/mulsigo/relay"
 )
+
+var count int
+
+func FakePrivateIdentity() (*Private, *Identity) {
+	name := "John-" + strconv.Itoa(count)
+	count++
+	priv, id, err := NewPrivateIdentity(name, rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	return priv, id
+}
+
+func BatchPrivateIdentity(n int) ([]*Private, []*Identity) {
+	var privs = make([]*Private, n)
+	var pubs = make([]*Identity, n)
+	for i := 0; i < n; i++ {
+		privs[i], pubs[i] = FakePrivateIdentity()
+	}
+	return privs, pubs
+}
 
 type globalStreamFactory struct {
 	//            id    stream
@@ -17,7 +40,7 @@ type globalStreamFactory struct {
 }
 
 //
-func newGlobalStreamFactory(ids ...*Identity) *globalStreamFactory {
+func NewGlobalStreamFactory() *globalStreamFactory {
 	fsf := &globalStreamFactory{
 		streams: make(map[string]*fakeStreamPair),
 	}
@@ -41,7 +64,7 @@ func (f *globalStreamFactory) streamPair(id string) *fakeStreamPair {
 	defer f.Unlock()
 	fsp, ok := f.streams[id]
 	if !ok {
-		fsp = &fakeStreamPair{}
+		fsp = &fakeStreamPair{Cond: sync.NewCond(&sync.Mutex{})}
 		f.streams[id] = fsp
 	}
 	return fsp
@@ -64,19 +87,20 @@ type fakeStreamPair struct {
 
 func (f *fakeStreamPair) addAndWait(s *fakeStream, first bool) {
 	f.L.Lock()
-	var other *fakeStream
 	if first {
 		f.f1 = s
-		other = f.f2
+		for f.f2 == nil {
+			f.Wait()
+		}
+		s.remote = f.f2
 	} else {
 		f.f2 = s
-		other = f.f1
-	}
-	for other == nil {
-		f.Wait()
+		for f.f1 == nil {
+			f.Wait()
+		}
+		s.remote = f.f1
 	}
 
-	s.remote = other
 	f.L.Unlock()
 	f.Signal()
 }

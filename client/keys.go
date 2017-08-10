@@ -20,7 +20,7 @@ import (
 	"gopkg.in/dedis/kyber.v1/util/encoding"
 )
 
-var Group = edwards25519.NewAES128SHA256Ed25519(false)
+var Group = edwards25519.NewAES128SHA256Ed25519()
 
 type Private struct {
 	seed *ed25519.PrivateKey

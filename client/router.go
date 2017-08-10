@@ -41,8 +41,6 @@ type Router struct {
 	// global lock making one Send at a time
 	// XXX would there be a way to remove that constraint...
 	sync.Mutex
-	// public key representing this router
-	public *Identity
 	// list of open streams maintained by the router
 	streams map[string]stream
 	doneMut sync.Mutex
@@ -65,6 +63,9 @@ func NewRouter(factory streamFactory) *Router {
 func (blr *Router) Send(remote *Identity, msg *ClientMessage) error {
 	blr.Lock()
 	defer blr.Unlock()
+	if blr.done {
+		return ErrClosed
+	}
 	stream, ok := blr.streams[remote.ID()]
 	if !ok {
 		var err error
@@ -126,6 +127,7 @@ func (blr *Router) Close() {
 	for _, s := range blr.streams {
 		s.close()
 	}
+	blr.done = true
 }
 
 // channelID returns the channel id associated with the two given identity. It's
