@@ -42,14 +42,14 @@ func TestTCPAddress(t *testing.T) {
 		{"purb://10.0.0.4:2000", true, PURB, "10.0.0.4:2000", "10.0.0.4", "2000", false},
 		{"tls://[::]:1000", true, TLS, "[::]:1000", "[::]", "1000", false},
 		{"tls4://10.0.0.4:2000", false, InvalidConnType, "", "", "", false},
-		{"tls://1000.0.0.4:2000", false, InvalidConnType, "", "", "", false},
-		{"tls://10.0.0.4:20000000", false, InvalidConnType, "", "", "", false},
-		{"tls://10.0.0.4:-10", false, InvalidConnType, "", "", "", false},
+		{"tls://1000.0.0.4:2000", false, TLS, "", "", "", false},
+		{"tls://10.0.0.4:20000000", false, TLS, "", "", "", false},
+		{"tls://10.0.0.4:-10", false, TLS, "", "", "", false},
 		{"tlsx10.0.0.4:2000", false, InvalidConnType, "", "", "", false},
 		{"tls:10.0.0.4x2000", false, InvalidConnType, "", "", "", false},
 		{"tlsx10.0.0.4x2000", false, InvalidConnType, "", "", "", false},
 		{"tlxblurdie", false, InvalidConnType, "", "", "", false},
-		{"tls://blublublu", false, InvalidConnType, "", "", "", false},
+		{"tls://blublublu", false, TLS, "", "", "", false},
 	}
 
 	for i, str := range tests {
