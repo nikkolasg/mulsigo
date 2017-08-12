@@ -120,9 +120,11 @@ func TestChannelProcess(t *testing.T) {
 		if !bytes.Contains(egress.GetBlob(), []byte("good")) {
 			t.Fatal("wrong message" + string(egress.Blob))
 		}
-		if egress.GetAddress() != cl1.Local().String() {
-			t.Fatalf("wrong sender %s vs %s %s", egress.GetAddress(), cl1.Local().String())
-		}
+		// address not a field set anymore
+		// TODO remove from RelayMessage
+		/*if egress.GetAddress() != cl1.Local().String() {*/
+		//t.Fatalf("wrong sender %s vs %s", egress.GetAddress(), cl1.Local().String())
+		/*}*/
 		if rm.GetChannel() != chanId1 {
 			t.Fatal("wrong channel")
 		}
