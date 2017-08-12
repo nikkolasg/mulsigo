@@ -16,6 +16,7 @@ type DKG struct {
 	participants []*Identity
 	n            int
 	t            int
+	i            int
 	router       *Router
 	dkg          *dkg.DistKeyGenerator
 	shareCh      chan *dkg.DistKeyShare
@@ -23,7 +24,7 @@ type DKG struct {
 	sync.Mutex
 }
 
-func NewDKG(priv *Private, pub *Identity, participants []*Identity, r *Router) (*DKG, error) {
+func NewDKG(priv *Private, participants []*Identity, r *Router) (*DKG, error) {
 	d := &DKG{
 		private:      priv,
 		participants: participants,
@@ -35,7 +36,7 @@ func NewDKG(priv *Private, pub *Identity, participants []*Identity, r *Router) (
 	}
 	publics := make([]kyber.Point, len(participants))
 	idx := -1
-	pubID := pub.ID()
+	pubID := priv.Public.ID()
 	for i, p := range participants {
 		if idx == -1 && p.ID() == pubID {
 			idx = i
@@ -45,8 +46,7 @@ func NewDKG(priv *Private, pub *Identity, participants []*Identity, r *Router) (
 	if idx == -1 {
 		return nil, errors.New("dkg: public key not found in participants list")
 	}
-	broadcastList := publics[:idx]
-	broadcastList = append(broadcastList, publics[idx+1:]...)
+	d.i = idx
 	d.router.RegisterProcessor(d)
 	var err error
 	d.dkg, err = dkg.NewDistKeyGenerator(Group, d.private.Scalar(), publics, random.Stream, d.t)
@@ -162,9 +162,10 @@ func (d *DKG) sendDeals() error {
 		select {
 		case e := <-global:
 			if err != nil {
-				nbConfirmedNodes += 1
+				slog.Debug("dkg: error sending deal", e)
 			}
-			slog.Debug("dkg: error sending deal", e)
+			nbConfirmedNodes += 1
+			slog.Infof("dkg[%d]: got %d confirmed node for my deal", d.i, nbConfirmedNodes)
 			continue
 		case <-timeoutCh:
 			return errors.New("dkg: not enough participants online after timeout")

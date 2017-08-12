@@ -37,7 +37,9 @@ func (p *Private) Scalar() kyber.Scalar {
 	digest[31] |= 64
 
 	s := Group.Scalar()
-	s.SetBytes(digest)
+	if err := s.UnmarshalBinary(digest[:32]); err != nil {
+		panic(err)
+	}
 	return s
 }
 
@@ -49,19 +51,17 @@ func (p *Private) PublicCurve25519() [32]byte {
 	priv := p.PrivateCurve25519()
 	var pubCurve [32]byte
 	curve25519.ScalarBaseMult(&pubCurve, &priv)
-
 	return pubCurve
 }
 
 func NewPrivateIdentity(name string, r io.Reader) (*Private, *Identity, error) {
 	pub, privEd, err := ed25519.GenerateKey(r)
-	priv := &Private{&privEd}
 	id := &Identity{
 		Name:      name,
 		CreatedAt: time.Now().Unix(),
 		Key:       pub,
 	}
-	priv.Public = id
+	priv := &Private{seed: &privEd, Public: id}
 
 	err = id.selfsign(priv, r)
 	return priv, id, err

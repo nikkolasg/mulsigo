@@ -95,6 +95,7 @@ func (blr *Router) processStream(id *Identity, s stream) {
 			return
 		}
 		msg := unmarshald.(*ClientMessage)
+		slog.Debugf("router: received msg %d bytes from %s", len(buff), id.ID())
 		blr.Dispatch(id, msg)
 	}
 }

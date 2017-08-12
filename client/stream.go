@@ -81,8 +81,8 @@ type channelStreamFactory struct {
 
 // newChannelStreamFactory returns a streamFactory that returns channel-based
 // stream with additional reliability handled by reliableStream.
-func newChannelStreamFactory(priv *Private, pub *Identity, mult *relay.Multiplexer) *channelStreamFactory {
-	return &channelStreamFactory{priv: priv, pub: pub}
+func newChannelStreamFactory(priv *Private, mult *relay.Multiplexer) *channelStreamFactory {
+	return &channelStreamFactory{priv: priv, pub: priv.Public}
 }
 
 func (c *channelStreamFactory) newStream(to *Identity) (stream, error) {

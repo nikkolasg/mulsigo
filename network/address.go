@@ -52,6 +52,9 @@ func connType(t string) ConnType {
 // It returns InvalidConnType if the address is not valid or if the
 // connection type is not known.
 func (a Address) ConnType() ConnType {
+	if !a.Valid() {
+		return InvalidConnType
+	}
 	vals := strings.Split(string(a), typeAddressSep)
 	return connType(vals[0])
 }

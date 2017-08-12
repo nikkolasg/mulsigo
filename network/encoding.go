@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/dedis/protobuf"
-	"gopkg.in/dedis/crypto.v0/abstract"
-	"gopkg.in/dedis/crypto.v0/ed25519"
+	"gopkg.in/dedis/kyber.v1"
+	"gopkg.in/dedis/kyber.v1/group/edwards25519"
 )
 
 // Suite used globally by this network library.
@@ -17,7 +17,7 @@ import (
 // to use any suite we want (the decoding stuff is much harder then, because we
 // don't want to send the suite in the wire).
 // It will surely change in futur releases so we can permit this behavior.
-var Suite = ed25519.NewAES128SHA256Ed25519(false)
+var Suite = edwards25519.NewAES128SHA256Ed25519()
 
 // Message is a type for any message that the user wants to send
 type Message interface{}
@@ -41,12 +41,13 @@ type Encoder interface {
 // protobuf.  This encoder is useful when the whole message set can be contained
 // in a single wrapper struct that protobuf can decode.
 type SingleProtoEncoder struct {
-	t reflect.Type
+	t    reflect.Type
+	cons protobuf.Constructors
 }
 
 func NewSingleProtoEncoder(msg Message) *SingleProtoEncoder {
 	t := getValueType(msg)
-	return &SingleProtoEncoder{t}
+	return &SingleProtoEncoder{t, defaultConstructors(Suite)}
 }
 
 func (m *SingleProtoEncoder) Marshal(msg Message) ([]byte, error) {
@@ -68,12 +69,12 @@ func (m *SingleProtoEncoder) Unmarshal(buff []byte) (Message, error) {
 }
 
 // DefaultConstructors gives a default constructor for protobuf out of the global suite
-func defaultConstructors(suite abstract.Suite) protobuf.Constructors {
+func defaultConstructors(g kyber.Group) protobuf.Constructors {
 	constructors := make(protobuf.Constructors)
-	var point abstract.Point
-	var secret abstract.Scalar
-	constructors[reflect.TypeOf(&point).Elem()] = func() interface{} { return suite.Point() }
-	constructors[reflect.TypeOf(&secret).Elem()] = func() interface{} { return suite.Scalar() }
+	var point kyber.Point
+	var secret kyber.Scalar
+	constructors[reflect.TypeOf(&point).Elem()] = func() interface{} { return g.Point() }
+	constructors[reflect.TypeOf(&secret).Elem()] = func() interface{} { return g.Scalar() }
 	return constructors
 }
 
@@ -104,7 +105,7 @@ func (m *MultiProtoEncoder) Marshal(msg Message) ([]byte, error) {
 	if err := binary.Write(b, globalOrder, id); err != nil {
 		return nil, err
 	}
-	enc := SingleProtoEncoder{t}
+	enc := SingleProtoEncoder{t, nil}
 	buff, err := enc.Marshal(msg)
 	if err != nil {
 		return nil, err
@@ -123,7 +124,7 @@ func (m *MultiProtoEncoder) Unmarshal(buff []byte) (Message, error) {
 		return nil, fmt.Errorf("multiprotoencoder: type %d not registered", id)
 	}
 
-	enc := SingleProtoEncoder{typ}
+	enc := SingleProtoEncoder{typ, defaultConstructors(Suite)}
 	return enc.Unmarshal(b.Bytes())
 }
 

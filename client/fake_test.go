@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/nikkolasg/mulsigo/network"
 	"github.com/nikkolasg/mulsigo/relay"
 )
 
@@ -32,6 +33,29 @@ func BatchRouters(ids []*Identity) []*Router {
 		routers[i] = NewRouter(fact)
 	}
 	return routers
+}
+
+func BatchRelayRouters(privs []*Private, ids []*Identity) (*relay.Relay, []*Router) {
+	relayAddr := network.NewTCPAddress("0.0.0.0:8080")
+	r, err := network.NewTCPRouter(relayAddr, enc)
+	if err != nil {
+		panic(err)
+	}
+
+	relayServer := relay.NewRelay(r)
+	go relayServer.Start()
+
+	routers := make([]*Router, len(ids))
+	for i, priv := range privs {
+		conn, err := network.NewTCPConn(relayAddr, enc)
+		if err != nil {
+			panic(err)
+		}
+		mult := relay.NewMultiplexer(conn)
+		routers[i] = NewRouter(newChannelStreamFactory(priv, mult))
+	}
+
+	return relayServer, routers
 }
 
 func FakePrivateIdentity() (*Private, *Identity) {

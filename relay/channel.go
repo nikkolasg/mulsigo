@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -47,13 +48,13 @@ func NewMultiplexer(c net.Conn) *Multiplexer {
 // does not exists, it creates it and join the channel on the relay. It returns
 // an error in case the "join" operation failed.
 func (m *Multiplexer) Channel(id string) (Channel, error) {
-	slog.Debugf("multiplexer: new channel %s joining...", id)
+	slog.Debugf("multiplexer: new channel %s joining...", hex.EncodeToString([]byte(id))[:10])
 	m.chanMut.Lock()
 	if s, ok := m.channels[id]; ok {
 		m.chanMut.Unlock()
 		return s, nil
 	}
-	slog.Debugf("multiplexer: new channel %s joining...", id)
+	slog.Debugf("multiplexer: new channel %s joining...", hex.EncodeToString([]byte(id))[:10])
 	ch := newClientChannel(id, m)
 	m.channels[id] = ch
 	m.chanMut.Unlock()
