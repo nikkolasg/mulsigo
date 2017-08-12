@@ -14,6 +14,7 @@ import (
 )
 
 var count int
+var relayAddr = network.NewTCPAddress("0.0.0.0:8080")
 
 func BatchPrivateIdentity(n int) ([]*Private, []*Identity) {
 	var privs = make([]*Private, n)
@@ -36,26 +37,45 @@ func BatchRouters(ids []*Identity) []*Router {
 }
 
 func BatchRelayRouters(privs []*Private, ids []*Identity) (*relay.Relay, []*Router) {
-	relayAddr := network.NewTCPAddress("0.0.0.0:8080")
-	r, err := network.NewTCPRouter(relayAddr, enc)
+	relayServer := Relay()
+	routers := make([]*Router, len(ids))
+	for i, priv := range privs {
+		mult := Multiplexer()
+		routers[i] = NewRouter(newChannelStreamFactory(priv, mult))
+	}
+	return relayServer, routers
+}
+
+func Relay() *relay.Relay {
+	r, err := network.NewTCPRouter(relayAddr, relayEncoder)
 	if err != nil {
 		panic(err)
 	}
 
 	relayServer := relay.NewRelay(r)
 	go relayServer.Start()
+	return relayServer
+}
 
-	routers := make([]*Router, len(ids))
-	for i, priv := range privs {
-		conn, err := network.NewTCPConn(relayAddr, enc)
-		if err != nil {
-			panic(err)
-		}
-		mult := relay.NewMultiplexer(conn)
-		routers[i] = NewRouter(newChannelStreamFactory(priv, mult))
+func Multiplexer() *relay.Multiplexer {
+	conn, err := network.NewTCPConn(relayAddr, relayEncoder)
+	if err != nil {
+		panic(err)
 	}
+	return relay.NewMultiplexer(conn)
+}
 
-	return relayServer, routers
+func ChannelPair(id string) (*relay.Relay, relay.Channel, relay.Channel) {
+	relay := Relay()
+	c1, err := Multiplexer().Channel(id)
+	if err != nil {
+		panic(err)
+	}
+	c2, err := Multiplexer().Channel(id)
+	if err != nil {
+		panic(err)
+	}
+	return relay, c1, c2
 }
 
 func FakePrivateIdentity() (*Private, *Identity) {

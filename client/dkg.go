@@ -70,6 +70,8 @@ func (d *DKG) Process(id *Identity, cm *ClientMessage) {
 	if !correct {
 		return
 	}
+
+	slog.Debug("dkg: Processing message from ", id.ID())
 	dkgPacket := cm.PDkg
 	switch {
 	case dkgPacket.Deal != nil:
@@ -150,7 +152,10 @@ func (d *DKG) sendDeals() error {
 				Deal: deal,
 			},
 		}
-		go func(i *Identity, c *ClientMessage) { global <- d.router.Send(i, c) }(id, cm)
+		go func(i *Identity, c *ClientMessage) {
+			slog.Debugf("dkg: sending to to %s", i.ID())
+			global <- d.router.Send(i, c)
+		}(id, cm)
 	}
 
 	// run the timeout

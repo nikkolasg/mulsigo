@@ -5,6 +5,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
@@ -103,7 +104,7 @@ func (i *Identity) Repr() string {
 }
 
 func (i *Identity) ID() string {
-	return base64.StdEncoding.EncodeToString(i.Key)
+	return hex.EncodeToString(i.Key)[:16]
 }
 
 func (i *Identity) PublicCurve25519() [32]byte {

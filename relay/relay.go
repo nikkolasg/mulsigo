@@ -135,7 +135,6 @@ func newChannel(r *Relay, id string) *channel {
 }
 
 func (ch *channel) newMessage(from net.Address, incoming *RelayMessage) {
-	log.Print(ch.id, "receiving from", from.String(), ": ", incoming.GetType())
 	switch incoming.GetType() {
 	case RelayMessage_JOIN:
 		ch.join <- from

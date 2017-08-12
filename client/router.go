@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"sync"
 
@@ -75,10 +76,11 @@ func (blr *Router) Send(remote *Identity, msg *ClientMessage) error {
 		}
 		go blr.processStream(remote, stream)
 	}
-	buf, err := enc.Marshal(msg)
+	buf, err := ClientEncoder.Marshal(msg)
 	if err != nil {
 		return err
 	}
+	slog.Debug("router: sending application message to ", remote.ID())
 	return stream.send(buf)
 }
 
@@ -89,7 +91,7 @@ func (blr *Router) processStream(id *Identity, s stream) {
 			slog.Info("relay router: closing stream with ", id.Name)
 			return
 		}
-		unmarshald, err := enc.Unmarshal(buff)
+		unmarshald, err := ClientEncoder.Unmarshal(buff)
 		if err != nil {
 			slog.Info("relay router: error unmarshalling:", err)
 			return
@@ -151,7 +153,7 @@ func channelID(own, remote *Identity) (string, bool) {
 	h := sha256.New()
 	h.Write([]byte(s1))
 	h.Write([]byte(s2))
-	return string(h.Sum(nil)), first
+	return hex.EncodeToString(h.Sum(nil)), first
 }
 
 // seqDispatcher is a simple dispatcher sequentially dispatching message to the

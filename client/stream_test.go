@@ -16,8 +16,10 @@ func TestNoiseStreamHandshake(t *testing.T) {
 	p2, i2, err := NewPrivateIdentity(name2, rand.Reader)
 	require.Nil(t, err)
 
-	// create a fake channel between the two identities
-	c1, c2 := createFakeChannelPair()
+	id, _ := channelID(i1, i2)
+	r, c1, c2 := ChannelPair(id)
+	defer r.Stop()
+	//c1, c2 := createFakeChannelPair()
 
 	n1 := newNoiseStream(p1, i1, i2, c1)
 	n2 := newNoiseStream(p2, i2, i1, c2)
@@ -69,7 +71,7 @@ func TestNoiseStreamDispatching(t *testing.T) {
 	go dispatchStream(n2, i1, d)
 	// sends a message n1 -> n2
 	go func() {
-		buf, _ := enc.Marshal(&ClientMessage{})
+		buf, _ := ClientEncoder.Marshal(&ClientMessage{})
 		require.Nil(t, n1.send(buf))
 	}()
 
@@ -144,7 +146,7 @@ func dispatchStream(s stream, id *Identity, d Dispatcher) {
 		if err != nil {
 			return
 		}
-		cm, err := enc.Unmarshal(buf)
+		cm, err := ClientEncoder.Unmarshal(buf)
 		if err != nil {
 			panic(err)
 		}

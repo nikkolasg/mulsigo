@@ -59,7 +59,10 @@ var ReliableWaitRetry = 1 * time.Second
 var MaxIncorrectMessages = 100
 
 // encoder of the "application" message layer
-var enc = network.NewSingleProtoEncoder(ClientMessage{})
+var ClientEncoder = network.NewSingleProtoEncoder(ClientMessage{})
+
+// encoder of the "relay" messages for relay streams
+var relayEncoder = network.NewSingleProtoEncoder(relay.RelayMessage{})
 
 // encoder of the reliable stream packets
 var reliableEncoder = network.NewSingleProtoEncoder(ReliablePacket{})
@@ -82,7 +85,10 @@ type channelStreamFactory struct {
 // newChannelStreamFactory returns a streamFactory that returns channel-based
 // stream with additional reliability handled by reliableStream.
 func newChannelStreamFactory(priv *Private, mult *relay.Multiplexer) *channelStreamFactory {
-	return &channelStreamFactory{priv: priv, pub: priv.Public}
+	return &channelStreamFactory{
+		priv:        priv,
+		pub:         priv.Public,
+		multiplexer: mult}
 }
 
 func (c *channelStreamFactory) newStream(to *Identity) (stream, error) {
@@ -95,9 +101,11 @@ func (c *channelStreamFactory) newStream(to *Identity) (stream, error) {
 	}
 
 	stream := newNoiseStream(c.priv, c.pub, to, channel)
+	slog.Debug("noise stream: ", c.pub.ID(), " TRYING handshake done with ", to.ID())
 	if err := stream.doHandshake(); err != nil {
 		return nil, err
 	}
+	slog.Debug("noise stream: ", c.pub.ID(), " handshake done with ", to.ID())
 	reliable := newReliableStream(stream)
 	return reliable, nil
 }
@@ -106,6 +114,9 @@ type connStreamFactory struct {
 	// XXX TODO
 }
 
+// reliableStream is a stream built on top of another stream that provides super
+// basic properties like ordering and reliability over the given stream.
+// It sends and expects protobuf-encoded ReliableMessage.
 type reliableStream struct {
 	stream
 	sequence  uint32
@@ -261,6 +272,7 @@ const (
 
 // noiseStream reads and sends message to/from a relay.Channel. Each message is
 // encrypted using the Noise framework.
+// this stream sends and expects protobuf-encoded relay.RelayMessage messages.
 type noiseStream struct {
 	// identity of the remote participant, needed for Noise communication
 	remote *Identity
