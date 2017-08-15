@@ -65,17 +65,17 @@ func Multiplexer() *relay.Multiplexer {
 	return relay.NewMultiplexer(conn)
 }
 
-func ChannelPair(id string) (*relay.Relay, relay.Channel, relay.Channel) {
-	relay := Relay()
-	c1, err := Multiplexer().Channel(id)
-	if err != nil {
-		panic(err)
+func Channels(id string, n int) (*relay.Relay, []relay.Channel) {
+	relayServer := Relay()
+	var chs []relay.Channel
+	for i := 0; i < n; i++ {
+		c, err := Multiplexer().Channel(id)
+		if err != nil {
+			panic(err)
+		}
+		chs = append(chs, c)
 	}
-	c2, err := Multiplexer().Channel(id)
-	if err != nil {
-		panic(err)
-	}
-	return relay, c1, c2
+	return relayServer, chs
 }
 
 func FakePrivateIdentity() (*Private, *Identity) {

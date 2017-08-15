@@ -110,6 +110,9 @@ func (m *Multiplexer) channelDone(id string) {
 	m.chanMut.Lock()
 	defer m.chanMut.Unlock()
 	delete(m.channels, id)
+	if len(m.channels) == 0 {
+		m.conn.Close()
+	}
 }
 
 type clientChannel struct {
@@ -117,6 +120,8 @@ type clientChannel struct {
 	m      *Multiplexer
 	egress chan *RelayMessage
 	stop   chan bool
+	done   bool
+	sync.Mutex
 }
 
 func newClientChannel(id string, m *Multiplexer) *clientChannel {
@@ -147,6 +152,12 @@ func (c *clientChannel) Receive() (string, []byte, error) {
 }
 
 func (c *clientChannel) Close() {
+	c.Lock()
+	defer c.Unlock()
+	if c.done {
+		return
+	}
+	c.done = true
 	if err := c.m.send(&RelayMessage{
 		Channel: c.id,
 		Type:    RelayMessage_LEAVE,

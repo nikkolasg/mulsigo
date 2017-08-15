@@ -2,13 +2,16 @@ package client
 
 import (
 	"crypto/rand"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/dedis/onet/log"
+	"github.com/nikkolasg/mulsigo/slog"
 	"github.com/stretchr/testify/require"
 )
 
-func TestNoiseStreamHandshake(t *testing.T) {
+func TestStreamNoiseHandshake(t *testing.T) {
 
 	// create identities
 	p1, i1, err := NewPrivateIdentity(name1, rand.Reader)
@@ -17,8 +20,9 @@ func TestNoiseStreamHandshake(t *testing.T) {
 	require.Nil(t, err)
 
 	id, _ := channelID(i1, i2)
-	r, c1, c2 := ChannelPair(id)
+	r, channels := Channels(id, 2)
 	defer r.Stop()
+	c1, c2 := channels[0], channels[1]
 	//c1, c2 := createFakeChannelPair()
 
 	n1 := newNoiseStream(p1, i1, i2, c1)
@@ -37,15 +41,22 @@ func TestNoiseStreamHandshake(t *testing.T) {
 	require.Error(t, n2.doHandshake())
 }
 
-func TestNoiseStreamDispatching(t *testing.T) {
+func TestStreamNoiseDispatching(t *testing.T) {
+	log.TestOutput(true, 5)
 	// create identities
 	p1, i1, err := NewPrivateIdentity(name1, rand.Reader)
 	require.Nil(t, err)
 	p2, i2, err := NewPrivateIdentity(name2, rand.Reader)
 	require.Nil(t, err)
 
-	// create a fake channel between the two identities
-	c1, c2 := createFakeChannelPair()
+	// create a channel between the two identities
+	id, _ := channelID(i1, i2)
+	r, channels := Channels(id, 2)
+	fmt.Println(r)
+	defer func() { fmt.Println("Closing relay..."); r.Stop() }()
+	c1, c2 := channels[0], channels[1]
+
+	//	c1, c2 := createFakeChannelPair()
 
 	// create receiving processor
 	var incoming = make(chan *ClientMessage)
@@ -63,33 +74,51 @@ func TestNoiseStreamDispatching(t *testing.T) {
 	var handshakeDone = make(chan bool)
 	go func() { err := n1.doHandshake(); require.Nil(t, err); handshakeDone <- true }()
 	go func() { err := n2.doHandshake(); require.Nil(t, err); handshakeDone <- true }()
-	defer n1.close()
-	defer n2.close()
+	//defer func() { fmt.Println("closing n1..."); n1.close() }()
+	//defer func() { fmt.Println("closing n2..."); n2.close() }()
+
 	<-handshakeDone
 	<-handshakeDone
-	go dispatchStream(n1, i2, d)
+	//go dispatchStream(n1, i2, d)
 	go dispatchStream(n2, i1, d)
 	// sends a message n1 -> n2
 	go func() {
 		buf, _ := ClientEncoder.Marshal(&ClientMessage{})
-		require.Nil(t, n1.send(buf))
+		fmt.Println("n1.send() ---> ?")
+		err := n1.send(buf)
+		fmt.Println("n1.send() --->", err)
+		require.Nil(t, err)
 	}()
-
 	select {
 	case c := <-incoming:
 		require.NotNil(t, c)
+		fmt.Println("fine so far?")
 	case <-time.After(1000 * time.Millisecond):
 		t.FailNow()
 	}
 }
 
-func TestReliableStream(t *testing.T) {
-	f1, f2 := NewFakeStreamsPair()
-	r1 := newReliableStream(f1).(*reliableStream)
-	r2 := newReliableStream(f2).(*reliableStream)
+func TestStreamReliable(t *testing.T) {
+	log.TestOutput(true, 5)
+	//f1, f2 := NewFakeStreamsPair()
+	// create identities
+	p1, i1, err := NewPrivateIdentity(name1, rand.Reader)
+	require.Nil(t, err)
+	p2, i2, err := NewPrivateIdentity(name2, rand.Reader)
+	require.Nil(t, err)
+
+	id, _ := channelID(i1, i2)
+	r, channels := Channels(id, 2)
+	c1, c2 := channels[0], channels[1]
+
+	n1 := newNoiseStream(p1, i1, i2, c1)
+	n2 := newNoiseStream(p2, i2, i1, c2)
+	go n1.doHandshake()
+	go n2.doHandshake()
+	r1 := newReliableStream(n1).(*reliableStream)
+	//r2 := newReliableStream(n2).(*reliableStream)
 
 	msg := []byte("Hello World")
-	msg2 := []byte("Hello Universe")
 
 	// test repeating ack
 	defer func(defValue int) { MaxIncorrectMessages = defValue }(MaxIncorrectMessages)
@@ -98,13 +127,39 @@ func TestReliableStream(t *testing.T) {
 	ReliableWaitRetry = time.Millisecond * 100
 
 	require.Error(t, r1.send(msg))
-	require.Len(t, f2.buffers, 2)
 	require.Equal(t, uint32(1), r1.sequence)
+	r.Stop()
 
-	f1, f2 = NewFakeStreamsPair()
-	r1 = newReliableStream(f1).(*reliableStream)
-	r2 = newReliableStream(f2).(*reliableStream)
+}
 
+func TestStreamReliableWorking(t *testing.T) {
+	//log.TestOutput(true, 5)
+	slog.Level = slog.LevelDebug
+	msg2 := []byte("Hello Universe")
+	p1, i1, err := NewPrivateIdentity(name1, rand.Reader)
+	require.Nil(t, err)
+	p2, i2, err := NewPrivateIdentity(name2, rand.Reader)
+	require.Nil(t, err)
+
+	//	f1, f2 = NewFakeStreamsPair()
+	id, first := channelID(i1, i2)
+	slog.Debug("Is identity 1 first ? ", first)
+	r, channels := Channels(id, 2)
+	defer r.Stop()
+	c1, c2 := channels[0], channels[1]
+
+	n1 := newNoiseStream(p1, i1, i2, c1)
+	n2 := newNoiseStream(p2, i2, i1, c2)
+	if first {
+		go n2.doHandshake()
+		require.Nil(t, n1.doHandshake())
+	} else {
+		go n1.doHandshake()
+		require.Nil(t, n2.doHandshake())
+	}
+
+	r1 := newReliableStream(n1).(*reliableStream)
+	r2 := newReliableStream(n2).(*reliableStream)
 	go r1.stateMachine()
 	go r2.stateMachine()
 	// test sending a message
@@ -138,11 +193,13 @@ func TestReliableStream(t *testing.T) {
 	// test closing then sending
 	r1.close()
 	require.Error(t, r1.send(msg2))
+	slog.Debug("END OF TEST")
 }
 
 func dispatchStream(s stream, id *Identity, d Dispatcher) {
 	for {
 		buf, err := s.receive()
+		fmt.Println("receiving fine ? ", err)
 		if err != nil {
 			return
 		}

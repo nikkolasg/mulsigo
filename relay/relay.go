@@ -1,12 +1,12 @@
 package relay
 
 import (
+	fmt "fmt"
 	"sync"
 
 	"github.com/dedis/onet/log"
 	"github.com/nikkolasg/mulsigo/event"
 	net "github.com/nikkolasg/mulsigo/network"
-	"github.com/nikkolasg/mulsigo/slog"
 )
 
 // ChannelQueueSize represents how large the queue of message for one
@@ -46,9 +46,12 @@ func (r *Relay) Start() {
 }
 
 func (r *Relay) Process(from net.Address, msg net.Message) {
+	fmt.Println("TCPConn ", from, " --> relay BEFORE Lock()")
+	r.channelsMut.Lock()
+	fmt.Println("TCPConn ", from, " --> relay AFTER Lock()")
+	defer r.channelsMut.Unlock()
 	switch m := msg.(type) {
 	case *RelayMessage:
-		r.channelsMut.Lock()
 		id := m.GetChannel()
 		ch, ok := r.channels[id]
 		if !ok {
@@ -68,7 +71,6 @@ func (r *Relay) Process(from net.Address, msg net.Message) {
 			r.channels[id] = ch
 		}
 		ch.newMessage(from, m)
-		r.channelsMut.Unlock()
 	default:
 		log.Warn("received unknown msg from ", from)
 	}
@@ -76,10 +78,9 @@ func (r *Relay) Process(from net.Address, msg net.Message) {
 
 // Stop closes all channel, and closes all connections to the Relay.
 func (r *Relay) Stop() {
+	r.router.Stop()
 	r.channelsMut.Lock()
 	defer r.channelsMut.Unlock()
-
-	r.router.Stop()
 	for _, ch := range r.channels {
 		ch.stop()
 	}
@@ -227,11 +228,8 @@ func (ch *channel) addClient(client net.Address) {
 
 // stop makes the channel stop for processing messages.
 func (ch *channel) stop() {
-	slog.Debugf("channel %s: calling Stop() #1", ch.id)
 	close(ch.finished)
-	slog.Debugf("channel %s: calling Stop() #2", ch.id)
 	<-ch.finishedConfirmed
-	slog.Debugf("channel %s: calling Stop() #3", ch.id)
 }
 
 // messageInfo is a simple wrapper to wrap the sender of a message to the

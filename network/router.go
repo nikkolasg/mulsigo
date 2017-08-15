@@ -97,6 +97,7 @@ func (r *Router) Stop() error {
 		if err := c.Close(); err != nil {
 			log.Lvl5(err)
 		}
+		c.Close()
 	}
 	// wait for all handleConn to finish
 	r.Unlock()
@@ -181,17 +182,24 @@ func (r *Router) handleConn(c Conn) {
 		log.LLvlf5("router %s: closing conn to %s", r.address, addr)
 		r.traffic.updateRx(c.Rx())
 		r.traffic.updateTx(c.Tx())
+		log.LLvlf5("router %s: closing conn to %s #1", r.address, addr)
 		r.wg.Done()
+		log.LLvlf5("router %s: closing conn to %s #2", r.address, addr)
 		r.removeConnection(c)
-		r.Publish(&EventDown{c.Remote()})
+		log.LLvlf5("router %s: closing conn to %s #3", r.address, addr)
+		//r.Publish(&EventDown{c.Remote()})
+		log.LLvlf5("router %s: closing conn to %s #4", r.address, addr)
 	}()
 	log.Lvlf3("router %s: handling new connection to %s", r.address, addr)
 	for {
+		fmt.Println("TCPCON ", c.Remote(), " --> Receive()")
 		packet, err := c.Receive()
+		fmt.Println("TCPCON ", c.Remote(), " --> Receive() DONE", err)
 		if r.Closed() {
 			return
 		}
 
+		fmt.Println("TCPCON ", c.Remote(), " --> After r.Closed()")
 		if err != nil {
 			if err == ErrTimeout {
 				log.Lvlf5("router %s: drops connection to %s: timeout", r.address, addr)
@@ -208,10 +216,12 @@ func (r *Router) handleConn(c Conn) {
 			continue
 		}
 
+		fmt.Println("TCPCON ", c.Remote(), " --> before r.Dispatch()")
 		if err := r.Dispatch(addr, packet); err != nil {
 			log.Lvlf3("router %s: error dispatching %s", r.address, err)
 		}
 
+		fmt.Println("TCPCON ", c.Remote(), " --> After Dispatch()")
 	}
 }
 

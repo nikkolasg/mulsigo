@@ -195,7 +195,9 @@ func (c *TCPConn) Type() ConnType {
 // Close the connection.
 // Returns error if it couldn't close the connection.
 func (c *TCPConn) Close() error {
+	//fmt.Println("TCPCON ", c.Local(), " --> Closing #1")
 	c.closedMut.Lock()
+	//fmt.Println("TCPCON --> Closing #2")
 	defer c.closedMut.Unlock()
 	if c.closed == true {
 		return ErrClosed

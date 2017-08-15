@@ -163,10 +163,12 @@ func (r *reliableStream) stateMachine() {
 			if err != nil {
 				panic("something's wrong with the encoding" + err.Error())
 			}
+			slog.Debugf("reliable: got data with seq %d", rp.Sequence)
 			if err := r.stream.send(encoded); err != nil {
 				r.setError(err)
 				return
 			}
+			slog.Debugf("reliable: sent back ACK %d", rp.Sequence)
 
 			// pass unique message to the layer above
 			// linearly increasing sequence number
@@ -245,6 +247,9 @@ func (r *reliableStream) receive() ([]byte, error) {
 func (r *reliableStream) setError(e error) {
 	r.errMut.Lock()
 	defer r.errMut.Unlock()
+	if r.globalErr != nil {
+		return
+	}
 	r.globalErr = e
 	close(r.errCh)
 }
@@ -324,24 +329,28 @@ func newNoiseStream(priv *Private, pub, remote *Identity, ch relay.Channel) *noi
 // party's must send the first handshake message first.
 func (n *noiseStream) doHandshake() error {
 	if n.handshakeDone {
-		return errors.New("noise handshake already in process")
+		return errors.New("noise: handshake already done or in process")
 	}
 
 	// terminology of TLS implementations:
 	// client is sending the first message
 	var err error
 	if n.first {
+		slog.Debugf("noise: starting handshake client")
 		err = n.doHandshakeClient()
 	} else {
+		slog.Debugf("noise: starting handshake server")
 		err = n.doHandshakeServer()
 	}
 	if err == nil {
 		n.handshakeDone = true
+		slog.Debugf("noise: handshake done !")
 	}
 	return err
 }
 
 func (n *noiseStream) doHandshakeClient() error {
+	slog.Debugf("noise: handshake client send init message")
 	msg, _, _ := n.handshake.WriteMessage(nil, nil)
 	if err := n.channel.Send(msg); err != nil {
 		return err
@@ -351,12 +360,14 @@ func (n *noiseStream) doHandshakeClient() error {
 		return err
 	}
 
+	slog.Debugf("noise: handshake client received handshake message")
 	n.encrypt = enc
 	n.decrypt = dec
 	return nil
 }
 
 func (n *noiseStream) doHandshakeServer() error {
+	slog.Debugf("noise: handshake server receiving init message...")
 	_, _, err := n.receiveHandshake()
 	if err != nil {
 		return err
@@ -370,6 +381,7 @@ func (n *noiseStream) doHandshakeServer() error {
 	if err := n.channel.Send(res); err != nil {
 		return err
 	}
+	slog.Debugf("noise: handhshake server sent back handshake message")
 	n.encrypt = enc
 	n.decrypt = dec
 	return nil
