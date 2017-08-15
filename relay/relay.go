@@ -1,7 +1,6 @@
 package relay
 
 import (
-	fmt "fmt"
 	"sync"
 
 	"github.com/dedis/onet/log"
@@ -46,9 +45,7 @@ func (r *Relay) Start() {
 }
 
 func (r *Relay) Process(from net.Address, msg net.Message) {
-	fmt.Println("TCPConn ", from, " --> relay BEFORE Lock()")
 	r.channelsMut.Lock()
-	fmt.Println("TCPConn ", from, " --> relay AFTER Lock()")
 	defer r.channelsMut.Unlock()
 	switch m := msg.(type) {
 	case *RelayMessage:

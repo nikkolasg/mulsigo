@@ -1,10 +1,12 @@
 package client
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	net "github.com/nikkolasg/mulsigo/network"
+	"github.com/nikkolasg/mulsigo/slog"
 
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +17,38 @@ var cAddr1 = net.NewLocalAddress("client-1")
 var cAddr2 = net.NewLocalAddress("client-2")
 var chanid = "chanid"
 
-func TestRouter(t *testing.T) {
+func TestRouterLots(t *testing.T) {
+	n := 5
+	//thr := n/2 + 1
+	privs, ids := BatchPrivateIdentity(n)
+	slog.Level = slog.LevelDebug
+	defer func() { slog.Level = slog.LevelPrint }()
+
+	//routers := BatchRouters(ids)
+	relay, routers := BatchRelayRouters(privs, ids)
+	defer relay.Stop()
+
+	var incoming = make(chan *ClientMessage)
+	var proc processor
+	proc = func(i *Identity, c *ClientMessage) {
+		go func() { incoming <- c }()
+	}
+
+	for i, r := range routers {
+		fmt.Printf("router %d: %p\n", i, r)
+	}
+
+	routers[0].RegisterProcessor(&proc)
+	for i, id := range ids[1:] {
+		routers[i+1].RegisterProcessor(&proc)
+		go routers[0].Send(id, &ClientMessage{Type: 10})
+		go routers[i+1].Send(ids[0], &ClientMessage{Type: 10})
+		<-incoming
+		<-incoming
+	}
+}
+
+func TestRouterBasic(t *testing.T) {
 	_, ids := BatchPrivateIdentity(2)
 	glob := NewGlobalStreamFactory()
 	sf1 := glob.Sub(ids[0])

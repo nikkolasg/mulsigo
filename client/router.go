@@ -70,6 +70,7 @@ func (blr *Router) Send(remote *Identity, msg *ClientMessage) error {
 	stream, ok := blr.streams[remote.ID()]
 	if !ok {
 		var err error
+		slog.Infof("router: opening new stream to %s", remote.ID())
 		stream, err = blr.newStream(remote)
 		if err != nil {
 			return err

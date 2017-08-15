@@ -115,7 +115,7 @@ func TestStreamReliable(t *testing.T) {
 	n2 := newNoiseStream(p2, i2, i1, c2)
 	go n1.doHandshake()
 	go n2.doHandshake()
-	r1 := newReliableStream(n1).(*reliableStream)
+	r1 := newReliableStream(n1)
 	//r2 := newReliableStream(n2).(*reliableStream)
 
 	msg := []byte("Hello World")
@@ -158,8 +158,8 @@ func TestStreamReliableWorking(t *testing.T) {
 		require.Nil(t, n2.doHandshake())
 	}
 
-	r1 := newReliableStream(n1).(*reliableStream)
-	r2 := newReliableStream(n2).(*reliableStream)
+	r1 := newReliableStream(n1)
+	r2 := newReliableStream(n2)
 	go r1.stateMachine()
 	go r2.stateMachine()
 	// test sending a message

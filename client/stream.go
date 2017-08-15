@@ -101,12 +101,13 @@ func (c *channelStreamFactory) newStream(to *Identity) (stream, error) {
 	}
 
 	stream := newNoiseStream(c.priv, c.pub, to, channel)
-	slog.Debug("noise stream: ", c.pub.ID(), " TRYING handshake done with ", to.ID())
+	slog.Debug("streamFactory: ", c.pub.ID(), " TRYING handshake with ", to.ID())
 	if err := stream.doHandshake(); err != nil {
 		return nil, err
 	}
-	slog.Debug("noise stream: ", c.pub.ID(), " handshake done with ", to.ID())
+	slog.Debug("streamFactory: ", c.pub.ID(), " handshake done with ", to.ID())
 	reliable := newReliableStream(stream)
+	go reliable.stateMachine()
 	return reliable, nil
 }
 
@@ -129,7 +130,7 @@ type reliableStream struct {
 	sendMut   sync.Mutex // only one send operation at a time
 }
 
-func newReliableStream(s stream) stream {
+func newReliableStream(s stream) *reliableStream {
 	return &reliableStream{
 		stream: s,
 		dataCh: make(chan []byte, ReliableMessageBuffer),
@@ -198,12 +199,14 @@ func (r *reliableStream) send(buf []byte) error {
 	if err != nil {
 		panic("something's wrong with the encoding" + err.Error())
 	}
+	slog.Debugf("reliable: sending packet with sequence %d", r.sequence)
 	if err := r.stream.send(encoded); err != nil {
 		r.setError(err)
 		return err
 	}
 	// try many times to get an ack
 	for i := 0; i < MaxIncorrectMessages; i++ {
+		slog.Debugf("reliable: %d waiting ack %d", i, r.sequence)
 		select {
 		case ack := <-r.ackCh:
 			// only handling one packet at a time for the moment, no window

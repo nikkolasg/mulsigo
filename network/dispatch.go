@@ -91,9 +91,7 @@ func (d *BlockingDispatcher) Dispatch(from Address, msg Message) error {
 	if p = d.procs[t]; p == nil {
 		return fmt.Errorf("blocking dispatcher: no processor for " + t.String())
 	}
-	fmt.Println("TCPCON ", from, " Dispatcher. BEFORE process()")
 	p.Process(from, msg)
-	fmt.Println("TCPCON ", from, " Dispatcher. AFTER process()")
 	return nil
 }
 
