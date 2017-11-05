@@ -1,6 +1,7 @@
 package relay
 
 import (
+	fmt "fmt"
 	"sync"
 
 	"github.com/dedis/onet/log"
@@ -50,6 +51,10 @@ func (r *Relay) Process(from net.Address, msg net.Message) {
 	switch m := msg.(type) {
 	case *RelayMessage:
 		id := m.GetChannel()
+		if id == "" {
+			log.Warn("relay: relay message without a channel id")
+			return
+		}
 		ch, ok := r.channels[id]
 		if !ok {
 			if len(r.channels) > MaxChannel {
@@ -79,7 +84,9 @@ func (r *Relay) Stop() {
 	r.channelsMut.Lock()
 	defer r.channelsMut.Unlock()
 	for _, ch := range r.channels {
+		fmt.Println("channel ", ch.id, " stop() BEFORE")
 		ch.stop()
+		fmt.Println("channel ", ch.id, " stop() AFTER")
 	}
 }
 
@@ -105,6 +112,7 @@ func (r *Relay) Receive(e event.Event) {
 // by an ID. Each participant can broadcast message to a channel and receive
 // message from others on the same channel.
 type channel struct {
+	sync.Mutex
 	id                string           // id of the channel
 	relay             *Relay           // router to send messages
 	incoming          chan messageInfo // incoming message coming from the router
@@ -113,6 +121,7 @@ type channel struct {
 	finished          chan bool        // stop signal from the router
 	finishedConfirmed chan bool
 	clients           map[net.Address]bool // list of clients. Not concurrent safe.
+	done              bool                 // local variable
 }
 
 // newChannel returns a new channel identified by "id". It launches the
@@ -148,22 +157,29 @@ func (ch *channel) newMessage(from net.Address, incoming *RelayMessage) {
 func (ch *channel) process() {
 	clients := ch.clients
 	for {
+		fmt.Printf("channel %s select on channels ....", ch.id)
 		select {
 		case <-ch.finished:
-			ch.finishedConfirmed <- true
+			fmt.Print("finished!\n")
+			fmt.Println("ch.finished true !")
+			//ch.finishedConfirmed <- true
 			log.Lvl2("channel", ch.id, "finished")
 			return
 		case addr := <-ch.join:
+			fmt.Print("join!\n")
 			log.Lvl2("channel", ch.id, ": adding client", addr.String())
 			ch.addClient(addr)
 		case addr := <-ch.leave:
+			fmt.Print("leave!\n")
 			delete(clients, addr)
 			if len(clients) == 0 {
 				// delete this channel
+				ch.setDone()
 				ch.relay.deleteChannel(ch.id)
 				return
 			}
 		case info := <-ch.incoming:
+			fmt.Print("incoming!\n")
 			ingress := info.msg
 			addr := info.address
 			_, ok := clients[addr]
@@ -225,8 +241,26 @@ func (ch *channel) addClient(client net.Address) {
 
 // stop makes the channel stop for processing messages.
 func (ch *channel) stop() {
+	if ch.isDone() {
+		return
+	}
+	ch.setDone()
 	close(ch.finished)
-	<-ch.finishedConfirmed
+	/*fmt.Println("channel", ch.id, " wait finishedConfirmed BEFORE")*/
+	//<-ch.finishedConfirmed
+	/*fmt.Println("channel", ch.id, " wait finishedConfirmed AFTER")*/
+}
+
+func (ch *channel) setDone() {
+	ch.Lock()
+	defer ch.Unlock()
+	ch.done = true
+}
+
+func (ch *channel) isDone() bool {
+	ch.Lock()
+	defer ch.Unlock()
+	return ch.done
 }
 
 // messageInfo is a simple wrapper to wrap the sender of a message to the

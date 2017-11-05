@@ -136,6 +136,7 @@ func newClientChannel(id string, m *Multiplexer) *clientChannel {
 var ErrClosed = errors.New("channel closed")
 
 func (c *clientChannel) Receive() (string, []byte, error) {
+	slog.Debugf("channel: waiting to receive message")
 	select {
 	case rm := <-c.egress:
 		if rm.GetType() != RelayMessage_EGRESS {
@@ -145,6 +146,7 @@ func (c *clientChannel) Receive() (string, []byte, error) {
 			return "", nil, fmt.Errorf("channel %s: not egress receiving %d", c.id, rm.GetType())
 		}
 		eg := rm.GetEgress()
+		slog.Debugf("channel: egress message received")
 		return eg.GetAddress(), eg.GetBlob(), nil
 	case <-c.stop:
 		return "", nil, ErrClosed

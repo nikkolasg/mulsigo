@@ -29,6 +29,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestRelayProcess(t *testing.T) {
+	log.TestOutput(true, 5)
 	router, err := net.NewLocalRouter(rAddr, enc)
 	require.Nil(t, err)
 
@@ -80,9 +81,7 @@ func TestRelayProcess(t *testing.T) {
 		}})
 	time.Sleep(10 * time.Millisecond)
 	assert.True(t, log.ContainsStdOut("unregistered"))
-	fmt.Println(log.GetStdOut())
 	log.OutputToOs()
-	log.Print("DOOOOONNNNNNEEEEEEEE")
 }
 
 func waitNClients(ch *channel, n int) error {
